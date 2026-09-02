@@ -40,6 +40,10 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 DATA_FILE = "my-data.json"
 INDEX_FILE = "index.json"
+# Локальный слой: выдуманные записи для проверки вёрстки. Лежат отдельно и
+# закрыты .gitignore, поэтому в прод попасть не могут.
+LOCAL_DATA_FILE = "my-data.local.json"
+LOCAL_INDEX_FILE = "index.local.json"
 
 ITERATIONS = 150_000     # столько же выводит ключ сайт
 SLOT = 512               # длина записи после набивки: размер не должен ничего выдавать
@@ -128,13 +132,20 @@ def unseal_index(key, blob):
 
 # ---- файлы ------------------------------------------------------------------
 
-def load(password):
+def load(password, local=False):
     """Отдаёт (ключ, записи, соль)."""
-    index_path = os.path.join(root(), INDEX_FILE)
-    data_path = os.path.join(root(), DATA_FILE)
+    index_path = os.path.join(root(), LOCAL_INDEX_FILE if local else INDEX_FILE)
+    data_path = os.path.join(root(), LOCAL_DATA_FILE if local else DATA_FILE)
 
     if not os.path.exists(index_path):
-        salt = secrets.token_bytes(16)
+        # Локальный слой шифруется той же солью, что боевой: ключ один, и сайт
+        # читает оба файла, а не выбирает между ними.
+        main_index = os.path.join(root(), INDEX_FILE)
+        if local and os.path.exists(main_index):
+            with open(main_index, encoding="utf-8") as f:
+                salt = unb64(json.load(f)["salt"])
+        else:
+            salt = secrets.token_bytes(16)
         return derive_key(password, salt), [], salt
 
     with open(index_path, encoding="utf-8") as f:
@@ -160,7 +171,7 @@ def load(password):
     return key, records, salt
 
 
-def save(key, salt, records):
+def save(key, salt, records, local=False):
     """Пишет оба файла разом: фрагменты и индекс к ним.
 
     Записи лежат в том же порядке, что и в индексе, поэтому позиция в индексе
@@ -174,8 +185,9 @@ def save(key, salt, records):
     entries = [{"d": r["date"], "p": r.get("pair") or r.get("time", ""), "i": i}
                for i, r in enumerate(ordered)]
 
-    write_json(DATA_FILE, {"v": 1, "items": items})
-    write_json(INDEX_FILE, {"v": 1, "salt": b64(salt), "index": seal_index(key, entries)})
+    write_json(LOCAL_DATA_FILE if local else DATA_FILE, {"v": 1, "items": items})
+    write_json(LOCAL_INDEX_FILE if local else INDEX_FILE,
+               {"v": 1, "salt": b64(salt), "index": seal_index(key, entries)})
 
 
 def write_json(name, value):
@@ -273,6 +285,8 @@ def main():
                             ("edit", "изменить"), ("rm", "удалить")):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--password", help="иначе SCHEDULE_PASSWORD, .env или спросим")
+        p.add_argument("--local", action="store_true",
+                       help="локальный слой: видно только на своей машине, в git не уедет")
         if name == "list":
             p.add_argument("--from", dest="date_from", help="с этой даты")
             p.add_argument("--to", dest="date_to", help="по эту дату")
@@ -282,7 +296,7 @@ def main():
             fields(p)
 
     args = parser.parse_args()
-    key, records, salt = load(read_password(args.password))
+    key, records, salt = load(read_password(args.password), args.local)
 
     if args.cmd == "list":
         chosen = records
@@ -301,7 +315,7 @@ def main():
 
     if args.cmd == "add":
         record = build(args)
-        save(key, salt, records + [record])
+        save(key, salt, records + [record], args.local)
         print(f"добавлена {record['id'][:8]} — {record['subject']}")
         return
 
@@ -309,14 +323,14 @@ def main():
         prev = find(records, args.id)
         record = build(args, prev)
         records[records.index(prev)] = record
-        save(key, salt, records)
+        save(key, salt, records, args.local)
         print(f"изменена {record['id'][:8]} — {record['subject']}")
         return
 
     if args.cmd == "rm":
         record = find(records, args.id)
         records.remove(record)
-        save(key, salt, records)
+        save(key, salt, records, args.local)
         print(f"удалена {record['id'][:8]} — {record['subject']}")
         return
 

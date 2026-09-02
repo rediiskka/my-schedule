@@ -657,8 +657,14 @@ function showGate(){
    Соль лежит в index.json, а не в браузере: иначе на втором устройстве из того
    же пароля вывелся бы другой ключ. Порядок: пароль -> индекс -> соль -> ключ
    -> нужные фрагменты. */
+// На localhost сайт сначала смотрит локальный слой: выдуманные записи для
+// проверки вёрстки лежат в отдельных файлах, закрытых от git, и физически не
+// могут уехать в прод. Нет их — работаем с боевыми.
+const LOCAL_RUN = ['localhost','127.0.0.1'].includes(location.hostname);
 const INDEX_URL = 'index.json';
 const MINE_URL = 'my-data.json';
+const LOCAL_INDEX_URL = 'index.local.json';
+const LOCAL_MINE_URL = 'my-data.local.json';
 const SESSION_KEY = 'schedule.key';
 const SESSION_SALT = 'schedule.salt';
 let cryptoKey = null;
@@ -754,7 +760,25 @@ async function openMine(index){
     return true;
   }
   const mine = await fetchJSON(MINE_URL);
-  MY_ITEMS = mine && Array.isArray(mine.items) ? mine.items : null;
+  MY_ITEMS = mine && Array.isArray(mine.items) ? mine.items : [];
+
+  // Локальный слой дополняет боевой, а не подменяет: у него та же соль, значит
+  // тот же ключ, и фрагменты просто дописываются в хвост со сдвигом позиций.
+  if (LOCAL_RUN) {
+    const localIndex = await fetchJSON(LOCAL_INDEX_URL);
+    const localMine = localIndex && await fetchJSON(LOCAL_MINE_URL);
+    if (localIndex && localMine && Array.isArray(localMine.items)) {
+      try{
+        const offset = MY_ITEMS.length;
+        const entries = await decryptIndex(localIndex.index);
+        MY_ITEMS = MY_ITEMS.concat(localMine.items);
+        MY_INDEX = MY_INDEX.concat(entries.map(e=>({...e, i:e.i+offset})))
+          .sort((a,b)=>dateKey(a.d).localeCompare(dateKey(b.d))||String(a.p).localeCompare(String(b.p)));
+      }catch(e){
+        console.warn('Локальный слой не открылся тем же ключом:', e);
+      }
+    }
+  }
   return true;
 }
 
