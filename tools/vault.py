@@ -232,9 +232,11 @@ def parse_repeat(args):
         days.append(WEEKDAYS[key])
     if not args.until:
         raise SystemExit("к --repeat нужен --until: до какой даты повторять")
+    if args.parity not in (None, "odd", "even", "any"):
+        raise SystemExit("чётность одна из: odd, even, any")
     if not DATE_RE.match(args.until):
         raise SystemExit("дата окончания в формате ДД.ММ.ГГГГ")
-    return {"days": sorted(set(days)), "until": args.until}
+    return {"days": sorted(set(days)), "until": args.until, "parity": args.parity or "any"}
 
 
 def parse_moves(pairs):
@@ -334,7 +336,8 @@ def show(records):
         rep = record.get("repeat")
         if rep:
             names = [k for k, v in sorted(WEEKDAYS.items(), key=lambda kv: kv[1]) if v in rep["days"]]
-            when += f"  ↻ {','.join(names)} до {rep['until']}"
+            parity = {"odd": " по нечётным", "even": " по чётным"}.get(rep.get("parity"), "")
+            when += f"  ↻ {','.join(names)}{parity} до {rep['until']}"
             if record.get("skip"):
                 when += f", кроме {', '.join(record['skip'])}"
             if record.get("move"):
@@ -388,6 +391,8 @@ def main():
         p.add_argument("--parent", help="id дела, из которого это выросло")
         p.add_argument("--repeat", help="дни недели через запятую: вт,чт")
         p.add_argument("--until", help="до какой даты повторять, ДД.ММ.ГГГГ")
+        p.add_argument("--parity", choices=("odd", "even", "any"),
+                       help="только нечётные или только чётные недели — чтобы недели не были одинаковыми")
         p.add_argument("--skip", action="append", help="отменить одно повторение: ДД.ММ.ГГГГ")
         p.add_argument("--move", action="append",
                        help="перенести одно повторение: ДД.ММ.ГГГГ=ДД.ММ.ГГГГ")

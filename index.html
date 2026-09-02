@@ -1191,6 +1191,16 @@ function expandRepeat(rule,fromRu,toRu){
   const last=new Date(Math.min(stop.getTime(),to.getTime()));
   for(const d=new Date(first);d<=last;d.setDate(d.getDate()+1)){
     if(!rule.repeat.days.includes((d.getDay()+6)%7))continue;
+    // Чётность недели — чтобы недели не были одинаковыми: дело можно поставить
+    // только в чётные или только в нечётные. Чётность берём из расписания
+    // группы, а не считаем сами: там она уже размечена.
+    const parity=rule.repeat.parity||"any";
+    if(parity!=="any"){
+      const wk=DATA.weeks.find(w=>w.days.some(x=>x.date===d.toLocaleDateString("ru-RU")));
+      if(!wk)continue;
+      if(parity==="odd"&&!wk.odd)continue;
+      if(parity==="even"&&wk.odd)continue;
+    }
     const ru=d.toLocaleDateString("ru-RU");
     if(skip.has(ru))continue;
     out.push({...rule,date:moves[ru]||ru,repeat:null,_fromRule:rule.id});
