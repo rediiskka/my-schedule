@@ -2384,13 +2384,30 @@ function dataLooksValid(d){
       && w.days.every(day=>Array.isArray(day.pairs)));
 }
 
+// Расписание группы живёт в своём репозитории и там же обновляется — берём его
+// оттуда, а не держим стареющий снимок. Локальная копия остаётся запасной: без
+// сети или при недоступном raw сайт всё равно должен показать расписание.
+const UNI_URL="https://raw.githubusercontent.com/rediiskka/raspisanie-3bi1/refs/heads/master/data.json";
+async function fetchSchedule(){
+  try{
+    const r=await fetch(`${UNI_URL}?v=${Date.now()}`,{cache:"reload"});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const data=await r.json();
+    if(!dataLooksValid(data))throw new Error("расписание не похоже на себя");
+    return data;
+  }catch(e){
+    console.warn("Расписание группы не пришло из репозитория, беру локальную копию:",e);
+  }
+  const r=await fetch("data.json",{cache:"no-cache"});
+  if(!r.ok)throw new Error("HTTP "+r.status);
+  return r.json();
+}
+
 async function boot(){
   try{
-    const r=await fetch("data.json",{cache:"no-cache"});
-    if(!r.ok)throw new Error("HTTP "+r.status);
-    DATA=await r.json();
+    DATA=await fetchSchedule();
   }catch(e){
-    console.error("Не удалось загрузить data.json:",e);
+    console.error("Не удалось загрузить расписание:",e);
     schedulePlaceholder("Здесь скоро появится расписание.");
     return;
   }
