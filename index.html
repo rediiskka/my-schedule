@@ -638,11 +638,13 @@ const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
 const unb64 = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
 
 // Нет файла — просто нет задач: сайт остаётся обычным расписанием.
-// Кэш обходим начисто: файл правится и приезжает коммитом, а закэшированный
-// ответ (в том числе прошлый 404) означал бы «задачи пропали» на ровном месте.
+// Кэш обходим двумя способами сразу, и оба нужны. cache:'reload' снимает кэш
+// браузера, а метка в адресе — кэш GitHub Pages: голый tasks.json лежит там
+// готовым ответом, и после коммита сайт ещё несколько минут отдавал бы старые
+// задачи. Файл маленький, качать его заново каждый раз ничего не стоит.
 async function fetchTasksFile(){
   try{
-    const r = await fetch(TASKS_URL, { cache: 'reload' });
+    const r = await fetch(`${TASKS_URL}?v=${Date.now()}`, { cache: 'reload' });
     if (!r.ok) return null;
     const data = await r.json();
     return data && data.salt && Array.isArray(data.items) ? data : null;
