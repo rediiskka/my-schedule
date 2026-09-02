@@ -467,9 +467,12 @@
     border-radius:50%;font-size:8.5px;font-weight:800;color:var(--on-accent)}
   .msg.sg2{background:var(--sg2)}
   .mine-mark{width:13px;height:13px;flex:none;vertical-align:-2px}
-  /* Наложение: своё остаётся ярким и в рамке, чужое под ним гаснет. */
-  .mline.clash{outline:1.5px solid var(--now);outline-offset:1px;border-radius:6px}
-  .mline.faded{opacity:.45}
+  /* Наложение по времени рисуется как сдвоенная пара: один блок, внутри
+     пунктирная граница. Своё стоит сверху — оно приоритетнее. */
+  .mstack{border:1.5px dashed color-mix(in srgb,var(--ink) 26%,transparent);
+    border-radius:8px;padding:2px 3px;margin-top:1px}
+  .mstack .mline + .mline{border-top:1.5px dashed color-mix(in srgb,var(--ink) 26%,transparent);
+    padding-top:2px;margin-top:2px}
   .pill.clash-pill{background:var(--now);color:var(--on-accent)}
   .lesson.task.clash{outline:2px solid var(--now);outline-offset:-2px}
   .pill.mine-pill{display:inline-flex;align-items:center;gap:4px;
@@ -1374,7 +1377,11 @@ function weekTable(wi){
       const inHour=events[ci].filter(e=>e.hour===h);
       const mineHere=inHour.some(e=>e.mine);
       const tintFrom=inHour.filter(e=>!e.mine).map(e=>e.lesson);
-      const cell=inHour.map(e=>e.html).join("");
+      // Пересечение через границу часа в общий блок не попадает: событие осталось
+      // в своей ячейке, поэтому пунктир рисуется вокруг него одного.
+      const cell=groupOverlapping(inHour).map(g=>g.length>1
+        ? `<div class="mstack">${g.map(e=>e.html).join("")}</div>`
+        : (g[0].clash ? `<div class="mstack lone">${g[0].html}</div>` : g[0].html)).join("");
       const tint=tintFrom.length?sgTint(tintFrom):(mineHere?" mine-tint":"");
       html+=`<td class="c${t?" today":""}${tint}${mineHere?" has-mine":""}" data-day="${di}" data-week="${wi}">${cell}</td>`;
     });
@@ -1407,9 +1414,9 @@ function weekEvents(w,wi,di){
   // ним приглушается, но не исчезает — конфликт должно быть видно.
   out.sort((a,b)=>(a.span?a.span[0]:0)-(b.span?b.span[0]:0)||(b.mine?1:0)-(a.mine?1:0));
   out.forEach(e=>{
-    if(e.mine){ e.html=myChipHTML(e.record,e.clash); return; }
-    const l=e.lesson, faded=e.clash?" faded":"";
-    e.html=`<div class="mline${faded}" title="${esc(l.raw)}">${l.subgroup?`<span class="msg sg${l.subgroup}">${l.subgroup}</span>`:""}`
+    if(e.mine){ e.html=myChipHTML(e.record); return; }
+    const l=e.lesson;
+    e.html=`<div class="mline" title="${esc(l.raw)}">${l.subgroup?`<span class="msg sg${l.subgroup}">${l.subgroup}</span>`:""}`
       +`<span class="mabbr" style="background:${typeColor(l.tn)}">${abbr(l.subject)}</span>`
       +`${l.room?`<span class="mroom">${esc(l.room)}</span>`:""}</div>`;
   });
@@ -1435,6 +1442,18 @@ function spanOf(time,duration){
 function overlaps(a,b){
   if(!a||!b)return false;
   return a[0]<b[1]&&b[0]<a[1];
+}
+
+// Пересекающиеся события собираются в один блок — как сдвоенная пара, которая
+// рисуется одной карточкой с пунктиром, а не двумя плашками.
+function groupOverlapping(events){
+  const groups=[];
+  events.forEach(e=>{
+    const g=groups.find(g=>g.some(x=>overlaps(x.span,e.span)));
+    if(g)g.push(e); else groups.push([e]);
+  });
+  groups.forEach(g=>g.sort((a,b)=>(b.mine?1:0)-(a.mine?1:0)));   // своё сверху
+  return groups;
 }
 
 // Час начала из строки вида "12:30–14:00" или "19:00".
