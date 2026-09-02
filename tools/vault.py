@@ -201,6 +201,7 @@ def build(args, prev=None):
         "date": args.date if args.date is not None else prev.get("date", ""),
         "pair": str(args.pair) if args.pair is not None else prev.get("pair", ""),
         "time": args.time if args.time is not None else prev.get("time", ""),
+        "duration": int(args.duration) if args.duration else prev.get("duration"),
         "subject": args.subject if args.subject is not None else prev.get("subject", ""),
         "type": args.type if args.type is not None else prev.get("type", "Своё"),
         "teacher": args.teacher if args.teacher is not None else prev.get("teacher", ""),
@@ -227,6 +228,8 @@ def show(records):
     for record in records:
         pair = record.get("pair")
         when = f"{pair} пара {PAIRS[pair]}" if pair in PAIRS else (record.get("time") or "--:--")
+        if not pair and record.get("duration"):
+            when += f" +{record['duration']}м"
         who = f"  {record['teacher']}" if record.get("teacher") else ""
         where = f"  ауд. {record['room']}" if record.get("room") else ""
         print(f"{record['date']}  {when}  {record['subject']}"
@@ -260,6 +263,7 @@ def main():
         p.add_argument("--date", help="ДД.ММ.ГГГГ, как в расписании группы")
         p.add_argument("--pair", choices=tuple(PAIRS), help="номер пары: встанет в сетку недели")
         p.add_argument("--time", help="ЧЧ:ММ, если это не пара")
+        p.add_argument("--duration", help="сколько минут займёт — нужно, чтобы видеть наложения")
         p.add_argument("--type", choices=TYPES)
         p.add_argument("--teacher")
         p.add_argument("--room")
@@ -282,10 +286,16 @@ def main():
 
     if args.cmd == "list":
         chosen = records
+        # Границы сравниваем по дате, а не по полному ключу: иначе запись без
+        # номера пары оказывается «позже» верхней границы того же дня.
+        def day_key(text):
+            day, month, year = (text.split(".") + ["", "", ""])[:3]
+            return (year, month, day)
+
         if args.date_from:
-            chosen = [r for r in chosen if sort_key(r) >= sort_key({"date": args.date_from}, blank="")]
+            chosen = [r for r in chosen if day_key(r.get("date", "")) >= day_key(args.date_from)]
         if args.date_to:
-            chosen = [r for r in chosen if sort_key(r) <= sort_key({"date": args.date_to, "pair": "9"})]
+            chosen = [r for r in chosen if day_key(r.get("date", "")) <= day_key(args.date_to)]
         show(chosen)
         return
 

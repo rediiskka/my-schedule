@@ -467,6 +467,11 @@
     border-radius:50%;font-size:8.5px;font-weight:800;color:var(--on-accent)}
   .msg.sg2{background:var(--sg2)}
   .mine-mark{width:13px;height:13px;flex:none;vertical-align:-2px}
+  /* Наложение: своё остаётся ярким и в рамке, чужое под ним гаснет. */
+  .mline.clash{outline:1.5px solid var(--now);outline-offset:1px;border-radius:6px}
+  .mline.faded{opacity:.45}
+  .pill.clash-pill{background:var(--now);color:var(--on-accent)}
+  .lesson.task.clash{outline:2px solid var(--now);outline-offset:-2px}
   .pill.mine-pill{display:inline-flex;align-items:center;gap:4px;
     background:var(--pink-soft);color:var(--pink-ink)}
 
@@ -609,7 +614,7 @@
 </head>
 <body>
 <!-- ==== ЭКРАН ПАРОЛЯ ==== -->
-<div id="gate" class="gate">
+<div id="gate" class="gate" hidden>
   <form id="gateForm" class="gate-card">
     <h1 class="font-display">Моё расписание</h1>
     <p>Личная страница. Введите пароль, чтобы войти.</p>
@@ -630,6 +635,12 @@ async function sha256Hex(text){
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 function hideGate(){ document.getElementById('gate').hidden = true; }
+function showGate(){
+  const gate = document.getElementById('gate');
+  gate.hidden = false;
+  document.getElementById('gateInput').focus();
+}
+
 
 /* ==== ЛИЧНЫЕ ЗАПИСИ · ключ и чтение ==========================================
    Расписание группы публичное. Личное лежит рядом зашифрованным: my-data.json —
@@ -648,6 +659,12 @@ const MINE_URL = 'my-data.json';
 const SESSION_KEY = 'schedule.key';
 const SESSION_SALT = 'schedule.salt';
 let cryptoKey = null;
+
+// Ключ читается из localStorage мгновенно, поэтому решаем до первого кадра: у
+// того, кто уже вошёл, форма не должна мелькать вовсе. Не подойдёт (файлы
+// перевыпустили с другой солью) — форму покажет проверка при запуске.
+if (!localStorage.getItem(SESSION_KEY)) showGate();
+
 let MY_INDEX = null;      // [{d:"ДД.ММ.ГГГГ", p:"3", i:12}, ...]
 let MY_ITEMS = null;      // сырые фрагменты, расшифровываем по требованию
 const MY_CACHE = new Map();
@@ -829,7 +846,7 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
   <header class="ribbon">
     <div class="wrap inner">
       <div>
-        <div class="eyebrow">пары 3БИ1 · плюс личные задачи</div>
+        <div class="eyebrow">пары 3БИ1 · плюс моё</div>
         <div class="h1row">
           <h1 class="font-display">Моё расписание</h1>
           <button id="theme" class="theme-btn" title="Тема оформления" aria-label="Тема оформления"><svg class="ic" aria-hidden="true"><use href="#i-auto"/></svg></button>
@@ -1227,12 +1244,12 @@ const MINE_MARK = '<svg class="ic mine-mark" aria-hidden="true"><use href="#i-he
 
 // Компактный чип для недели и месяца — те же классы, что у пар, поэтому под
 // сетку не нужно ни одного нового CSS-правила.
-function myChipHTML(r){
+function myChipHTML(r,clash){
   const cat=MY_TYPE[r.type]||MY_TYPE["Своё"];
   // В сетке у пар стоит только начало занятия: колонка узкая, и целый интервал
   // в ней рвётся. Полное время остаётся в подсказке.
   const start=myTime(r).split("–")[0];
-  return `<div class="mline task-chip" title="${esc(r.subject)}${myTime(r)?" · "+esc(myTime(r)):""}${r.note?" · "+esc(r.note):""}">`
+  return `<div class="mline task-chip${clash?" clash":""}" title="${esc(r.subject)}${myTime(r)?" · "+esc(myTime(r)):""}${clash?" · наложение":""}${r.note?" · "+esc(r.note):""}">`
     +`${start?`<span class="mtime">${esc(start)}</span>`:""}${MINE_MARK}`
     +`<span class="mabbr" style="background:${cat.color}">${abbr(r.subject)}</span></div>`;
 }
@@ -1240,16 +1257,16 @@ function myChipHTML(r){
 // Запись собирается той же разметкой, что и занятие группы: слева колонка с
 // номером пары и временем, справа плашка аудитории. Отличать её должен маркер,
 // а не другое устройство карточки — иначе она читается как чужеродная.
-function myCardHTML(r){
+function myCardHTML(r,clash){
   const cat=MY_TYPE[r.type]||MY_TYPE["Своё"];
   const meta=[];
   if(r.teacher)meta.push(`<span><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg> <b>${hl(r.teacher)}</b></span>`);
   const note=r.note?`<div class="meta">${hl(r.note)}</div>`:"";
   const room=r.room?`<div class="room-side"><div class="rm"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg> ${hl(r.room)}</div><div class="rl">аудитория</div></div>`:"";
-  return `<div class="lesson task" style="--stripe:${cat.color}">
+  return `<div class="lesson task${clash?" clash":""}" style="--stripe:${cat.color}">
     <div class="row">
       <div class="linfo">
-        <div class="l-head"><span class="pill mine-pill">${MINE_MARK} моё</span>${r.type&&r.type!=="Своё"?`<span class="pill" style="background:${cat.color}">${cat.label}</span>`:""}</div>
+        <div class="l-head"><span class="pill mine-pill">${MINE_MARK} моё</span>${r.type&&r.type!=="Своё"?`<span class="pill" style="background:${cat.color}">${cat.label}</span>`:""}${clash?`<span class="pill clash-pill">наложение</span>`:""}</div>
         <div class="subj">${hl(r.subject)}</div>
         ${meta.length?`<div class="meta">${meta.join("")}</div>`:""}
         ${note}
@@ -1261,19 +1278,31 @@ function myCardHTML(r){
 
 // Строка записи в списке — с той же левой колонкой, что у пары: номер и время
 // стоят на одном месте во всех строках дня.
+// Пересекается ли своя запись с чем-то в этот день: с парой или с другой своей.
+function myClash(r,ruDate){
+  const span=spanOf(myTime(r),r.duration);
+  if(!span)return false;
+  const day=(DATA.weeks.flatMap(w=>w.days)||[]).find(d=>d.date===ruDate);
+  const pairSpans=day?day.pairs.flatMap(p=>p.lessons.filter(l=>!isSelf(l)).filter(match)
+    .map(l=>spanOf(lessonTime(l,p)))):[];
+  const mineSpans=myForRu(ruDate).filter(x=>x.id!==r.id).map(x=>spanOf(myTime(x),x.duration));
+  return [...pairSpans,...mineSpans].some(o=>overlaps(span,o));
+}
+
 function myRowHTML(r){
   // Номер пары — понятие из расписания группы: им удобно задать время в утилите,
   // но своё дело парой не является, и подписывать его так значит путать. В
   // колонке остаётся только время, на том же месте, что и у занятий.
   const t=myTime(r);
   return `<div class="pair"><div class="pair-time"><span class="t">${t}</span></div>
-    <div class="stack">${myCardHTML(r)}</div></div>`;
+    <div class="stack">${myCardHTML(r,r._clash)}</div></div>`;
 }
 function dayHTML(wi,w,di,d){
   if(st.fDay&&d.day!==st.fDay)return"";
   const isToday=sameDay(d._dt,new Date());
   const hasSelf=d.pairs.some(p=>p.lessons.some(isSelf));
   const dayMine=myForRu(d.date);
+  dayMine.forEach(r=>{ r._clash=myClash(r,d.date); });
   const myRows=dayMine.map(myRowHTML).join("");
   const head=`<div class="day-head"><span class="day-name">${d.day}</span>
     <span class="day-date">${d.date}</span>${isToday?'<span class="today-pill">сегодня</span>':""}</div>`;
@@ -1324,40 +1353,105 @@ function renderWeek(){
   });
   return found?html:`<div class="emptystate"><div class="big"><svg class="ic" aria-hidden="true"><use href="#i-cloudsun"/></svg></div>Ничего не нашлось. Попробуй сбросить фильтры.</div>`;
 }
+// Сетка недели идёт по времени, а не по парам: пары здесь один из слоёв, к тому
+// же отключаемый, и делать их осью значит объявлять их главными. Строка — час;
+// диапазон часов берётся по самим событиям, чтобы пустые ночные часы не тянулись.
 function weekTable(wi){
   const w=DATA.weeks[wi];const now=new Date();
-  const[from,to]=currentRange();
   const cols=weekColumns(), quiet=quietDays();
+  const events=cols.map(di=>weekEvents(w,wi,di));
+  const hours=hourRange(events);
+
   let html=`<table class="wk"><colgroup><col style="width:64px">${cols.map(di=>quiet.has(di)?`<col style="width:5%">`:"<col>").join("")}</colgroup><tr><th></th>`;
   cols.forEach(di=>{const d=w.days[di];const t=sameDay(d._dt,now);
     html+=`<th class="${t?"today":""}">${SHORT[di]}<br><span style="font-weight:600;opacity:.7">${(d.date||"").slice(0,5)}</span></th>`;});
   html+="</tr>";
-  for(let pi=0;pi<7;pi++){
-    const lbl=w.days[0].pairs[pi].pair||"";const[n,tm]=lbl.split("\n");
-    const rowNow=(M.cur&&M.cur.wi===wi&&M.cur.pi===pi)?"now":(M.next&&M.next.wi===wi&&M.next.pi===pi)?"next":"";
-    html+=`<tr><td class="tm ${rowNow}"><b>${(n||"").replace(" пара","")}</b>${(tm||"").replace("–","–<br>")}</td>`;
-    cols.forEach(di=>{const d=w.days[di];const p=d.pairs[pi];const t=sameDay(d._dt,now);
-      const cls=markClass(wi,di,pi);
-      const selfp=p.lessons.some(isSelf);
-      const ls=selfp?[]:p.lessons.filter(l=>!isSelf(l)).filter(match);
-      // при включённых фильтрах клетка с парами, которые не подошли, гаснет
-      const dim=filtersOn()&&!selfp&&!ls.length&&p.lessons.length?" dim":"";
-      let cell="";
-      if(selfp){cell=`<div class="wk-self"><svg class="ic" aria-hidden="true"><use href="#i-leaf"/></svg></div>`;}
-      else{cell=ls.map(l=>`<div class="mline" title="${esc(l.raw)}">${l.subgroup?`<span class="msg sg${l.subgroup}">${l.subgroup}</span>`:""}<span class="mabbr" style="background:${typeColor(l.tn)}">${abbr(l.subject)}</span>${l.room?`<span class="mroom">${esc(l.room)}</span>`:""}</div>`).join("");}
-      const outside=d._dt&&(d._dt<from||d._dt>to)?" dim":"";
-    html+=`<td class="c${t?" today":""}${cls}${outside||dim||sgTint(ls)}" data-day="${di}" data-week="${wi}">${cell}</td>`;});
+
+  hours.forEach(h=>{
+    html+=`<tr><td class="tm"><b>${String(h).padStart(2,"0")}:00</b></td>`;
+    cols.forEach((di,ci)=>{
+      const d=w.days[di];const t=sameDay(d._dt,now);
+      const inHour=events[ci].filter(e=>e.hour===h);
+      const mineHere=inHour.some(e=>e.mine);
+      const tintFrom=inHour.filter(e=>!e.mine).map(e=>e.lesson);
+      const cell=inHour.map(e=>e.html).join("");
+      const tint=tintFrom.length?sgTint(tintFrom):(mineHere?" mine-tint":"");
+      html+=`<td class="c${t?" today":""}${tint}${mineHere?" has-mine":""}" data-day="${di}" data-week="${wi}">${cell}</td>`;
+    });
     html+="</tr>";
-  }
-  // Задачи не привязаны к номеру пары, поэтому им — отдельная строка снизу,
-  // а не собственная сетка часов: те же ячейки, тот же клик, что открывает день.
-  html+=`<tr><td class="tm"><b>Задачи</b></td>`;
-  cols.forEach(di=>{const d=w.days[di];const mine=myForRu(d.date);
-    const chips=mine.map(myChipHTML).join("");
-    html+=`<td class="c${mine.length?" mine-tint has-mine":""}" data-day="${di}" data-week="${wi}">${chips}</td>`;});
-  html+="</tr>";
+  });
   return '<div class="hscroll">'+html+"</table></div>";
 }
+
+// Все события дня одним списком: занятия и свои записи равноправны, у каждого
+// свой час — по нему они и раскладываются.
+function weekEvents(w,wi,di){
+  const d=w.days[di];
+  const out=[];
+  d.pairs.forEach((p,pi)=>{
+    if(p.lessons.some(isSelf))return;                       // день самостоятельной работы
+    p.lessons.filter(l=>!isSelf(l)).filter(match).forEach(l=>{
+      const time=lessonTime(l,p)||"";
+      out.push({hour:startHour(time),span:spanOf(time),mine:false,lesson:l,time});
+    });
+  });
+  myForRu(d.date).forEach(r=>{
+    const time=myTime(r);
+    out.push({hour:startHour(time),span:spanOf(time,r.duration),mine:true,record:r,time});
+  });
+
+  // Наложение считается один раз здесь, чтобы список и сетка говорили одно и то же.
+  out.forEach(e=>{ e.clash=out.some(o=>o!==e&&overlaps(e.span,o.span)); });
+
+  // Своё поверх пары: раз человек занял это время, выбор уже сделан. Пара под
+  // ним приглушается, но не исчезает — конфликт должно быть видно.
+  out.sort((a,b)=>(a.span?a.span[0]:0)-(b.span?b.span[0]:0)||(b.mine?1:0)-(a.mine?1:0));
+  out.forEach(e=>{
+    if(e.mine){ e.html=myChipHTML(e.record,e.clash); return; }
+    const l=e.lesson, faded=e.clash?" faded":"";
+    e.html=`<div class="mline${faded}" title="${esc(l.raw)}">${l.subgroup?`<span class="msg sg${l.subgroup}">${l.subgroup}</span>`:""}`
+      +`<span class="mabbr" style="background:${typeColor(l.tn)}">${abbr(l.subject)}</span>`
+      +`${l.room?`<span class="mroom">${esc(l.room)}</span>`:""}</div>`;
+  });
+  return out;
+}
+
+// Минуты от полуночи: сравнивать интервалы удобнее числами, чем строками.
+function minutesOf(hhmm){
+  const m=/^(\d{1,2}):(\d{2})/.exec((hhmm||"").trim());
+  return m?Number(m[1])*60+Number(m[2]):null;
+}
+// Начало и конец события. У записи без длительности конца нет — она считается
+// точкой: этого хватает, чтобы поймать «поставил дело на время пары».
+function spanOf(time,duration){
+  const parts=(time||"").split("–");
+  const start=minutesOf(parts[0]);
+  if(start===null)return null;
+  const end=parts[1]!==undefined?minutesOf(parts[1]):(duration?start+Number(duration):start);
+  return [start,end===null?start:end];
+}
+// Пересечение по времени. Впритык — конец в конец — не считается: пара до 14:00
+// и дело с 14:00 не конфликтуют.
+function overlaps(a,b){
+  if(!a||!b)return false;
+  return a[0]<b[1]&&b[0]<a[1];
+}
+
+// Час начала из строки вида "12:30–14:00" или "19:00".
+function startHour(time){
+  const m=/^(\d{1,2}):/.exec((time||"").trim());
+  return m?Number(m[1]):0;
+}
+
+// От первого события до последнего: пустые часы по краям сетке ни к чему,
+// а внутри они остаются — иначе исчезнут окна между делами.
+function hourRange(days){
+  const hours=days.flat().map(e=>e.hour).filter(h=>h>0);
+  if(!hours.length)return [];
+  const first=Math.min(...hours), last=Math.max(...hours);
+  return Array.from({length:last-first+1},(_,i)=>first+i);
+}
+
 // индекс месяца, в котором лежит выбранная неделя (чтобы не открывать пустой август)
 /* Какие дни показывать и какие сжимать — решают данные, а не номер дня.
    У разных групп самостоятельная работа в разные дни, а пары могут быть
@@ -1443,8 +1537,7 @@ function monthGrid(ptr){
     const dim=filtersOn()&&!dayLessons.filter(l=>!isSelf(l)).length&&!dayMine.length?" dim":"";
     // Пары скрыты рубильником или фильтром, а своё есть — ячейка не должна
     // оставаться белой: она подкрашивается своим цветом.
-    const outside=d&&d._dt&&(d._dt<from||d._dt>to)?" dim":"";
-    const tint=outside||dim||sgTint(dayLessons)||(dayMine.length?" mine-tint":"");
+    const tint=dim||sgTint(dayLessons)||(dayMine.length?" mine-tint":"");
     const mark=dayMine.length?" has-mine":"";
     html+=`<div class="mcell${t?" today":""}${q}${tint}${mark}" data-day="${ref.di}" data-week="${ref.wi}"><div class="mn">${day}</div>${lines}</div>`;
   }
@@ -1665,7 +1758,7 @@ function fillLegend(d){
   const fill=`<span class="lg-title">Фон карточки</span>`
     +`<span class="lg"><i class="fill" style="background:var(--sg2)"></i>моя подгруппа</span>`
     +`<span class="lg"><i class="fill" style="background:var(--sg0)"></i>пара у всех</span>`;
-  const tasks=`<span class="lg-title">Мои задачи</span>`
+  const tasks=`<span class="lg-title">Моё</span>`
     +Object.values(MY_TYPE).map(c=>`<span class="lg"><i style="background:${c.color}"></i>${c.label}</span>`).join("");
   $("legend").innerHTML=`<div class="lg-row">${type}</div><div class="lg-row">${fill}</div><div class="lg-row">${tasks}</div>`;
 }
@@ -1674,7 +1767,7 @@ function fillLegend(d){
 function bindViewButtons(){
   document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{
     if(b.dataset.view==="month"&&st.view!=="month")st.monthPtr=monthOfWeek(st.cur);
-    st.view=b.dataset.view;save();show();closeNav();});
+    st.view=b.dataset.view;snapPeriodToView();save();show();closeNav();});
   // scope
   $("from").onchange=e=>{st.from=e.target.value;st.scope="custom";st.view="list";save();show();};
   $("to").onchange=e=>{st.to=e.target.value;st.scope="custom";st.view="list";save();show();};
@@ -1820,6 +1913,22 @@ function bindGrid(){
 }
 
 /* Возврат значений в поля из состояния. */
+// Период округляется до целых недель или месяцев — под крупность вида. Показанное
+// тогда совпадает с периодом ровно, и приглушать в сетке нечего.
+function snapPeriodToView(){
+  const[a,z]=currentRange();
+  if(st.view==="week"){
+    const start=new Date(a), end=new Date(z);
+    start.setDate(start.getDate()-((start.getDay()+6)%7));
+    end.setDate(end.getDate()+(6-((end.getDay()+6)%7)));
+    st.from=isoDate(start); st.to=isoDate(end);
+  }else if(st.view==="month"){
+    st.from=isoDate(new Date(a.getFullYear(),a.getMonth(),1));
+    st.to=isoDate(new Date(z.getFullYear(),z.getMonth()+1,0));
+  }else return;                       // список показывает ровно заданное
+  st.scope="custom";
+}
+
 // Поля периода — не ввод пользователя, а отражение того, что открыто: после
 // навигации селектором они обязаны показать новый диапазон, а не прежний.
 function syncPeriodInputs(){
@@ -2385,22 +2494,16 @@ function dataLooksValid(d){
 }
 
 // Расписание группы живёт в своём репозитории и там же обновляется — берём его
-// оттуда, а не держим стареющий снимок. Локальная копия остаётся запасной: без
-// сети или при недоступном raw сайт всё равно должен показать расписание.
+// оттуда. Копии здесь нет намеренно: её пришлось бы помнить обновлять, а забыв,
+// сайт молча показывал бы прошлый семестр как настоящий. Источник недоступен —
+// честная заглушка.
 const UNI_URL="https://raw.githubusercontent.com/rediiskka/raspisanie-3bi1/refs/heads/master/data.json";
 async function fetchSchedule(){
-  try{
-    const r=await fetch(`${UNI_URL}?v=${Date.now()}`,{cache:"reload"});
-    if(!r.ok)throw new Error("HTTP "+r.status);
-    const data=await r.json();
-    if(!dataLooksValid(data))throw new Error("расписание не похоже на себя");
-    return data;
-  }catch(e){
-    console.warn("Расписание группы не пришло из репозитория, беру локальную копию:",e);
-  }
-  const r=await fetch("data.json",{cache:"no-cache"});
+  const r=await fetch(`${UNI_URL}?v=${Date.now()}`,{cache:"reload"});
   if(!r.ok)throw new Error("HTTP "+r.status);
-  return r.json();
+  const data=await r.json();
+  if(!dataLooksValid(data))throw new Error("расписание не похоже на себя");
+  return data;
 }
 
 async function boot(){
@@ -2442,7 +2545,7 @@ async function boot(){
 }
 // boot() запускается сразу, только если ключ уже лежит в этой вкладке —
 // иначе его вызывает обработчик формы после верного пароля.
-restoreKey().then(ok => { if (ok) { hideGate(); boot(); } });
+restoreKey().then(ok => { if (ok) { hideGate(); boot(); } else showGate(); });
 </script>
 </body>
 </html>
