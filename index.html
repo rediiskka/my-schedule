@@ -1161,7 +1161,9 @@ async function loadMine(fromRu,toRu){
     // Бессрочные дела и правила повторения не привязаны к окну: первое должно
     // быть видно всегда, второе начинается раньше показанного отрезка, но
     // действует внутри него.
-    if(entry.h!=="season"&&entry.h!=="repeat"){
+    // Дела со сроком, но без дня (неделя, месяц) начинаются раньше показанного
+    // отрезка, а действуют внутри него — их тоже берём и отсеиваем по периоду.
+    if(!["season","repeat","week","month"].includes(entry.h)){
       if(key<from)continue;
       if(key>to)break;                     // дальше только более поздние
     }
@@ -1431,7 +1433,13 @@ function dayHTML(wi,w,di,d){
 // Дела, у которых есть срок, но нет дня: показываются шапкой над списком, чтобы
 // не забылись — в сетку их положить некуда.
 function spanBanner(){
-  const loose=MY.filter(r=>!isDated(r));
+  const[a,z]=currentRange();
+  const loose=MY.filter(r=>!isDated(r)).filter(r=>{
+    if(r.horizon==="season")return true;                  // без срока — всегда
+    const[from,to]=(r.period||"").split("-");
+    const start=ruToDate(from), end=ruToDate(to);
+    return !start||!end||(start<=z&&end>=a);               // период пересекает показанное
+  });
   if(!loose.length)return "";
   const label={week:"На неделе",month:"В этом месяце",season:"Без срока"};
   const groups={};
