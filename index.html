@@ -1310,8 +1310,23 @@ function renderList(){
   });
   return found?html:`<div class="emptystate"><div class="big"><svg class="ic" aria-hidden="true"><use href="#i-cloudsun"/></svg></div>Ничего не нашлось. Попробуй сбросить фильтры.</div>`;
 }
+// Период говорит, что показываем; вид — как. Поэтому неделя рисуется не одна:
+// сетки идут одна под другой за все недели периода, как секции дней в списке.
 function renderWeek(){
-  const w=DATA.weeks[st.cur];const now=new Date();
+  const[from,to]=currentRange();
+  let html="",found=false;
+  DATA.weeks.forEach((w,wi)=>{
+    const days=w.days.filter(d=>d._dt&&d._dt>=from&&d._dt<=to);
+    if(!days.length)return;
+    found=true;
+    html+=`<div class="weekhead"><span class="wtag ${w.odd?"odd":"even"}">${w.odd?"нечётная":"чётная"}</span>
+      <span class="day-date">${weekRange(wi)}</span></div>`+weekTable(wi);
+  });
+  return found?html:`<div class="emptystate"><div class="big"><svg class="ic" aria-hidden="true"><use href="#i-cloudsun"/></svg></div>Ничего не нашлось. Попробуй сбросить фильтры.</div>`;
+}
+function weekTable(wi){
+  const w=DATA.weeks[wi];const now=new Date();
+  const[from,to]=currentRange();
   const cols=weekColumns(), quiet=quietDays();
   let html=`<table class="wk"><colgroup><col style="width:64px">${cols.map(di=>quiet.has(di)?`<col style="width:5%">`:"<col>").join("")}</colgroup><tr><th></th>`;
   cols.forEach(di=>{const d=w.days[di];const t=sameDay(d._dt,now);
@@ -1319,10 +1334,10 @@ function renderWeek(){
   html+="</tr>";
   for(let pi=0;pi<7;pi++){
     const lbl=w.days[0].pairs[pi].pair||"";const[n,tm]=lbl.split("\n");
-    const rowNow=(M.cur&&M.cur.wi===st.cur&&M.cur.pi===pi)?"now":(M.next&&M.next.wi===st.cur&&M.next.pi===pi)?"next":"";
+    const rowNow=(M.cur&&M.cur.wi===wi&&M.cur.pi===pi)?"now":(M.next&&M.next.wi===wi&&M.next.pi===pi)?"next":"";
     html+=`<tr><td class="tm ${rowNow}"><b>${(n||"").replace(" пара","")}</b>${(tm||"").replace("–","–<br>")}</td>`;
     cols.forEach(di=>{const d=w.days[di];const p=d.pairs[pi];const t=sameDay(d._dt,now);
-      const cls=markClass(st.cur,di,pi);
+      const cls=markClass(wi,di,pi);
       const selfp=p.lessons.some(isSelf);
       const ls=selfp?[]:p.lessons.filter(l=>!isSelf(l)).filter(match);
       // при включённых фильтрах клетка с парами, которые не подошли, гаснет
@@ -1330,7 +1345,8 @@ function renderWeek(){
       let cell="";
       if(selfp){cell=`<div class="wk-self"><svg class="ic" aria-hidden="true"><use href="#i-leaf"/></svg></div>`;}
       else{cell=ls.map(l=>`<div class="mline" title="${esc(l.raw)}">${l.subgroup?`<span class="msg sg${l.subgroup}">${l.subgroup}</span>`:""}<span class="mabbr" style="background:${typeColor(l.tn)}">${abbr(l.subject)}</span>${l.room?`<span class="mroom">${esc(l.room)}</span>`:""}</div>`).join("");}
-      html+=`<td class="c${t?" today":""}${cls}${dim||sgTint(ls)}" data-day="${di}" data-week="${st.cur}">${cell}</td>`;});
+      const outside=d._dt&&(d._dt<from||d._dt>to)?" dim":"";
+    html+=`<td class="c${t?" today":""}${cls}${outside||dim||sgTint(ls)}" data-day="${di}" data-week="${wi}">${cell}</td>`;});
     html+="</tr>";
   }
   // Задачи не привязаны к номеру пары, поэтому им — отдельная строка снизу,
@@ -1338,7 +1354,7 @@ function renderWeek(){
   html+=`<tr><td class="tm"><b>Задачи</b></td>`;
   cols.forEach(di=>{const d=w.days[di];const mine=myForRu(d.date);
     const chips=mine.map(myChipHTML).join("");
-    html+=`<td class="c${mine.length?" mine-tint has-mine":""}" data-day="${di}" data-week="${st.cur}">${chips}</td>`;});
+    html+=`<td class="c${mine.length?" mine-tint has-mine":""}" data-day="${di}" data-week="${wi}">${chips}</td>`;});
   html+="</tr>";
   return '<div class="hscroll">'+html+"</table></div>";
 }
@@ -1380,7 +1396,20 @@ function monthOfWeek(wi){
 function renderMonth(){
   if(!MONTHS.length)return"";
   st.monthPtr=clamp(st.monthPtr,0,MONTHS.length-1);
-  const mo=MONTHS[st.monthPtr];const now=new Date();
+  const[from,to]=currentRange();
+  // Месяц попадает в период, если пересекается с ним хотя бы одним днём.
+  const shown=MONTHS.map((m,i)=>i).filter(i=>{
+    const m=MONTHS[i];
+    return new Date(m.y,m.m,1)<=to && new Date(m.y,m.m+1,0)>=from;
+  });
+  const list=shown.length?shown:[st.monthPtr];
+  return list.map(i=>(list.length>1
+    ? `<div class="weekhead"><span class="day-date">${RU_MONTHS[MONTHS[i].m]} ${MONTHS[i].y}</span></div>`
+    : "")+monthGrid(i)).join("");
+}
+function monthGrid(ptr){
+  const mo=MONTHS[ptr];const now=new Date();
+  const[from,to]=currentRange();
   const first=new Date(mo.y,mo.m,1);const off=(first.getDay()+6)%7;const dim=new Date(mo.y,mo.m+1,0).getDate();
   const quiet=quietDays();
   let html="";
@@ -1414,7 +1443,8 @@ function renderMonth(){
     const dim=filtersOn()&&!dayLessons.filter(l=>!isSelf(l)).length&&!dayMine.length?" dim":"";
     // Пары скрыты рубильником или фильтром, а своё есть — ячейка не должна
     // оставаться белой: она подкрашивается своим цветом.
-    const tint=dim||sgTint(dayLessons)||(dayMine.length?" mine-tint":"");
+    const outside=d&&d._dt&&(d._dt<from||d._dt>to)?" dim":"";
+    const tint=outside||dim||sgTint(dayLessons)||(dayMine.length?" mine-tint":"");
     const mark=dayMine.length?" has-mine":"";
     html+=`<div class="mcell${t?" today":""}${q}${tint}${mark}" data-day="${ref.di}" data-week="${ref.wi}"><div class="mn">${day}</div>${lines}</div>`;
   }
@@ -1441,7 +1471,12 @@ function fillPicker(){
     tag.hidden=false;
     tag.className="wtag "+(w.odd?"odd":"even");
     tag.innerHTML=`<span class="wt-full">${w.odd?"нечётная":"чётная"}</span><span class="wt-short">${w.odd?"неч":"чёт"}</span>`;
-    $("range-sub").textContent="Неделя "+(st.cur+1)+" · "+weekRange(st.cur);
+    // Показано может быть несколько недель — подпись говорит про то, что открыто,
+    // а не про ту неделю, что стоит в селекторе.
+    const[a,z]=currentRange();
+    $("range-sub").textContent=st.scope==="week"
+      ? "Неделя "+(st.cur+1)+" · "+weekRange(st.cur)
+      : a.toLocaleDateString("ru-RU")+" – "+z.toLocaleDateString("ru-RU");
   }
   sel.style.paddingRight=(document.querySelector(".wsel-end").offsetWidth+14)+"px";
 }
