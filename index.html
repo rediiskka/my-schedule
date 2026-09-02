@@ -477,6 +477,16 @@
   .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
   .tag{font-size:11px;font-weight:600;color:var(--lav-ink);background:var(--lav-soft);
     border-radius:999px;padding:1px 8px}
+  /* Дела со сроком, но без дня: им негде стоять в сетке, поэтому — полосой сверху. */
+  .loose{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px;
+    padding:8px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line)}
+  .loose-title{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+    font-weight:700;color:var(--muted)}
+  .loose-item{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13px;
+    background:color-mix(in srgb,var(--pink-soft) 55%,var(--panel));border-radius:999px;padding:3px 10px}
+  .loose-item.auto{border:1px dashed var(--pink-ink)}
+  .pill.auto-pill{background:transparent;color:var(--muted);border:1px dashed var(--line)}
+  .lesson.task.auto{border-style:dashed}
   .lesson.task.clash{outline:2px solid var(--now);outline-offset:-2px}
   .pill.mine-pill{display:inline-flex;align-items:center;gap:4px;
     background:var(--pink-soft);color:var(--pink-ink)}
@@ -1148,8 +1158,12 @@ async function loadMine(fromRu,toRu){
   const from=dateKey(fromRu), to=dateKey(toRu);
   for(const entry of MY_INDEX){
     const key=dateKey(entry.d);
-    if(key<from)continue;
-    if(key>to)break;                       // дальше только более поздние
+    // Бессрочные дела стоят в начале индекса без даты: они не привязаны к окну
+    // и должны быть видны всегда, иначе «закрыть сессию» пропадёт из виду.
+    if(entry.h!=="season"){
+      if(key<from)continue;
+      if(key>to)break;                     // дальше только более поздние
+    }
     let record=MY_CACHE.get(entry.i);
     if(record===undefined){
       try{ record=await decryptFragment(MY_ITEMS[entry.i]); }
@@ -1170,8 +1184,12 @@ function myTags(){
   MY.forEach(r=>(r.tags||[]).forEach(t=>seen.add(t)));
   return [...seen].sort((a,b)=>a.localeCompare(b,"ru"));
 }
+// В сетку и в день попадают только дела с датой. Недельные, месячные и
+// бессрочные показываются отдельно — им негде стоять на оси времени.
+function isDated(r){return (r.horizon||"time")==="time"||(r.horizon||"time")==="day";}
+function isTimed(r){return (r.horizon||"time")==="time";}
 function myForRu(ru){
-  return MY.filter(r=>r.date===ru)
+  return MY.filter(r=>isDated(r)&&r.date===ru)
     .filter(r=>!st.fTag||(r.tags||[]).includes(st.fTag))
     .filter(r=>!st.term||myMatch(r))
     .sort((a,b)=>(a.pair||"9").localeCompare(b.pair||"9")||(a.time||"").localeCompare(b.time||""));
@@ -1297,10 +1315,10 @@ function myCardHTML(r,clash){
   if(r.teacher)meta.push(`<span><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg> <b>${hl(r.teacher)}</b></span>`);
   const note=r.note?`<div class="meta">${hl(r.note)}</div>`:"";
   const room=r.room?`<div class="room-side"><div class="rm"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg> ${hl(r.room)}</div><div class="rl">аудитория</div></div>`:"";
-  return `<div class="lesson task${clash?" clash":""}" style="--stripe:${cat.color}">
+  return `<div class="lesson task${clash?" clash":""}${r.placed==="auto"?" auto":""}" style="--stripe:${cat.color}">
     <div class="row">
       <div class="linfo">
-        <div class="l-head"><span class="pill mine-pill">${MINE_MARK} моё</span>${r.type&&r.type!=="Своё"?`<span class="pill" style="background:${cat.color}">${cat.label}</span>`:""}${clash?`<span class="pill clash-pill">наложение</span>`:""}</div>
+        <div class="l-head"><span class="pill mine-pill">${MINE_MARK} моё</span>${r.type&&r.type!=="Своё"?`<span class="pill" style="background:${cat.color}">${cat.label}</span>`:""}${r.placed==="auto"?`<span class="pill auto-pill" title="время предложено, не подтверждено">поставлено само</span>`:""}${clash?`<span class="pill clash-pill">наложение</span>`:""}</div>
         <div class="subj">${hl(r.subject)}</div>
         ${meta.length?`<div class="meta">${meta.join("")}</div>`:""}
         ${(r.tags||[]).length?`<div class="tags">${r.tags.map(t=>`<span class="tag">#${esc(t)}</span>`).join("")}</div>`:""}
@@ -1363,8 +1381,23 @@ function dayHTML(wi,w,di,d){
 }
 
 /* ==== ОТРИСОВКА · список, неделя, месяц ===================================== */
+// Дела, у которых есть срок, но нет дня: показываются шапкой над списком, чтобы
+// не забылись — в сетку их положить некуда.
+function spanBanner(){
+  const loose=MY.filter(r=>!isDated(r));
+  if(!loose.length)return "";
+  const label={week:"На неделе",month:"В этом месяце",season:"Без срока"};
+  const groups={};
+  loose.forEach(r=>{ (groups[r.horizon]=groups[r.horizon]||[]).push(r); });
+  return Object.keys(groups).map(h=>`<div class="loose">
+    <span class="loose-title">${label[h]||h}</span>
+    ${groups[h].map(r=>`<span class="loose-item${r.placed==="auto"?" auto":""}">${hl(r.subject)}`
+      +`${(r.tags||[]).map(t=>`<span class="tag">#${esc(t)}</span>`).join("")}</span>`).join("")}
+  </div>`).join("");
+}
+
 function renderList(){
-  const[from,to]=currentRange();const multi=st.scope!=="week";let html="",found=false;
+  const[from,to]=currentRange();const multi=st.scope!=="week";let html=spanBanner(),found=!!html;
   DATA.weeks.forEach((w,wi)=>{
     let inner="";
     w.days.forEach((d,di)=>{if(!d._dt||d._dt<from||d._dt>to)return;inner+=dayHTML(wi,w,di,d);});
@@ -1434,7 +1467,7 @@ function weekEvents(w,wi,di){
       out.push({hour:startHour(time),span:spanOf(time),mine:false,lesson:l,time});
     });
   });
-  myForRu(d.date).forEach(r=>{
+  myForRu(d.date).filter(isTimed).forEach(r=>{
     const time=myTime(r);
     out.push({hour:startHour(time),span:spanOf(time,r.duration),mine:true,record:r,time});
   });

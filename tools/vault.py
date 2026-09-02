@@ -63,6 +63,10 @@ PAIRS = {
 }
 TYPES = ("Лекция", "Семинар", "Практика", "Своё")
 
+# Горизонт — насколько точно дело привязано ко времени. Подробности в docs/model.md.
+HORIZONS = ("time", "day", "week", "month", "season")
+PLACED = ("me", "auto")
+
 
 # ---- пароль и ключ ----------------------------------------------------------
 
@@ -182,7 +186,10 @@ def save(key, salt, records, local=False):
     while len(items) % BATCH or not items:
         items.append(seal(key, None))
 
-    entries = [{"d": r["date"], "p": r.get("pair") or r.get("time", ""), "i": i}
+    entries = [{"d": r.get("date") or (r.get("period", "").split("-")[0] if r.get("period") else ""),
+                "p": r.get("pair") or r.get("time", ""),
+                "h": r.get("horizon", "time"),
+                "i": i}
                for i, r in enumerate(ordered)]
 
     write_json(LOCAL_DATA_FILE if local else DATA_FILE, {"v": 1, "items": items})
@@ -200,16 +207,39 @@ def write_json(name, value):
 
 def sort_key(record, blank="9"):
     """Ключ порядка. blank — чем заполнять пустую пару: у нижней границы
-    диапазона это «раньше всех», у верхней — «позже всех»."""
-    day, month, year = (record.get("date", "").split(".") + ["", "", ""])[:3]
+    диапазона это «раньше всех», у верхней — «позже всех».
+
+    У дел без даты её роль играет начало периода, а у бессрочных — пустота:
+    они уходят в конец, но из файла не пропадают."""
+    date = record.get("date") or (record.get("period", "").split("-")[0] if record.get("period") else "")
+    day, month, year = (date.split(".") + ["", "", ""])[:3]
     return (year, month, day, record.get("pair") or blank, record.get("time", ""))
 
 
+def guess_horizon(args, prev):
+    """Горизонт из того, что задано: время -> день -> период -> без срока."""
+    if args.horizon:
+        return args.horizon
+    if prev.get("horizon"):
+        return prev["horizon"]
+    if args.period:
+        return "month" if args.horizon == "month" else "week"
+    if args.time or args.pair:
+        return "time"
+    if args.date:
+        return "day"
+    return "season"
+
+
 def build(args, prev=None):
-    """Личная запись повторяет пару из data.json — плюс дата и id."""
+    """Дело: одно и то же для цели, задачи и пункта расписания — см. docs/model.md."""
     prev = prev or {}
     record = {
         "id": prev.get("id") or str(uuid.uuid4()),
+        "horizon": guess_horizon(args, prev),
+        "placed": args.placed or prev.get("placed", "me"),
+        "parent": args.parent if args.parent is not None else prev.get("parent", ""),
+        "period": args.period if args.period is not None else prev.get("period", ""),
         "date": args.date if args.date is not None else prev.get("date", ""),
         "pair": str(args.pair) if args.pair is not None else prev.get("pair", ""),
         "time": args.time if args.time is not None else prev.get("time", ""),
@@ -221,14 +251,25 @@ def build(args, prev=None):
         "note": args.note if args.note is not None else prev.get("note", ""),
         "tags": list(args.tag) if args.tag else prev.get("tags", []),
     }
-    if not record["subject"] or not record["date"]:
-        raise SystemExit("обязательны --subject и --date")
-    if not DATE_RE.match(record["date"]):
-        raise SystemExit("дата в формате ДД.ММ.ГГГГ, как в расписании группы")
+    # Обязательное зависит только от горизонта — в этом весь смысл модели.
+    if not record["subject"]:
+        raise SystemExit("обязателен --subject")
+    horizon = record["horizon"]
+    if horizon not in HORIZONS:
+        raise SystemExit(f"горизонт один из: {', '.join(HORIZONS)}")
+    if record["placed"] not in PLACED:
+        raise SystemExit(f"placed один из: {', '.join(PLACED)}")
+    if horizon in ("time", "day"):
+        if not record["date"]:
+            raise SystemExit(f"при горизонте {horizon} нужна --date")
+        if not DATE_RE.match(record["date"]):
+            raise SystemExit("дата в формате ДД.ММ.ГГГГ, как в расписании группы")
+    if horizon == "time" and not record["pair"] and not record["time"]:
+        raise SystemExit("при горизонте time нужен --pair или --time")
+    if horizon in ("week", "month") and not record["period"]:
+        raise SystemExit(f"при горизонте {horizon} нужен --period, например 07.09.2026-13.09.2026")
     if record["pair"] and record["pair"] not in PAIRS:
         raise SystemExit(f"номер пары один из: {', '.join(PAIRS)}")
-    if not record["pair"] and not record["time"]:
-        raise SystemExit("нужен либо --pair (встанет в сетку), либо --time")
     if record["type"] not in TYPES:
         raise SystemExit(f"тип один из: {', '.join(TYPES)}")
     return record
@@ -239,13 +280,22 @@ def show(records):
         print("пусто")
         return
     for record in records:
+        horizon = record.get("horizon", "time")
         pair = record.get("pair")
-        when = f"{pair} пара {PAIRS[pair]}" if pair in PAIRS else (record.get("time") or "--:--")
-        if not pair and record.get("duration"):
-            when += f" +{record['duration']}м"
+        if horizon in ("week", "month"):
+            when = f"{'неделя' if horizon == 'week' else 'месяц'} {record.get('period', '')}"
+        elif horizon == "season":
+            when = "без срока"
+        elif horizon == "day":
+            when = "в течение дня"
+        else:
+            when = f"{pair} пара {PAIRS[pair]}" if pair in PAIRS else (record.get("time") or "--:--")
+            if not pair and record.get("duration"):
+                when += f" +{record['duration']}м"
         who = f"  {record['teacher']}" if record.get("teacher") else ""
         where = f"  ауд. {record['room']}" if record.get("room") else ""
-        print(f"{record['date']}  {when}  {record['subject']}"
+        auto = " ~" if record.get("placed") == "auto" else "  "
+        print(f"{record.get('date') or '..........'}{auto}{when}  {record['subject']}"
               f"  [{record.get('type', '')}]{who}{where}  ({record['id'][:8]})")
         if record.get("tags"):
             print("      " + " ".join("#" + t for t in record["tags"]))
@@ -285,17 +335,25 @@ def main():
         p.add_argument("--note")
         p.add_argument("--tag", action="append",
                        help="метка по смыслу: спорт, здоровье, подработка. Можно несколько")
+        p.add_argument("--horizon", choices=HORIZONS,
+                       help="точность: time, day, week, month, season. Обычно понятен сам")
+        p.add_argument("--period", help="границы для week и month: ДД.ММ.ГГГГ-ДД.ММ.ГГГГ")
+        p.add_argument("--placed", choices=PLACED,
+                       help="me — время выбрано владельцем, auto — предложено ассистентом")
+        p.add_argument("--parent", help="id дела, из которого это выросло")
 
     for name, help_text in (("list", "показать записи"), ("add", "добавить"),
-                            ("edit", "изменить"), ("rm", "удалить")):
+                            ("edit", "изменить"), ("rm", "удалить"),
+                            ("replan", "убрать всё, что расставлено автоматически")):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--password", help="иначе SCHEDULE_PASSWORD, .env или спросим")
         p.add_argument("--local", action="store_true",
                        help="локальный слой: видно только на своей машине, в git не уедет")
-        if name == "list":
+        if name in ("list", "replan"):
             p.add_argument("--from", dest="date_from", help="с этой даты")
-            p.add_argument("--filter-tag", dest="filter_tag", help="только записи с этой меткой")
             p.add_argument("--to", dest="date_to", help="по эту дату")
+        if name == "list":
+            p.add_argument("--filter-tag", dest="filter_tag", help="только записи с этой меткой")
         if name in ("edit", "rm"):
             p.add_argument("--id", required=True)
         if name in ("add", "edit"):
@@ -333,6 +391,27 @@ def main():
         records[records.index(prev)] = record
         save(key, salt, records, args.local)
         print(f"изменена {record['id'][:8]} — {record['subject']}")
+        return
+
+    if args.cmd == "replan":
+        # Своё время владельца неприкосновенно: убираем только предложенное.
+        def day_key(text):
+            day, month, year = (text.split(".") + ["", "", ""])[:3]
+            return (year, month, day)
+
+        doomed = [r for r in records if r.get("placed") == "auto"]
+        if args.date_from:
+            doomed = [r for r in doomed if day_key(r.get("date", "")) >= day_key(args.date_from)]
+        if args.date_to:
+            doomed = [r for r in doomed if day_key(r.get("date", "")) <= day_key(args.date_to)]
+        if not doomed:
+            print("нечего пересобирать: автоматически расставленного нет")
+            return
+        left = [r for r in records if r not in doomed]
+        save(key, salt, left, args.local)
+        print(f"убрано автоматически расставленных: {len(doomed)}")
+        for r in doomed:
+            print(f"  {r.get('date') or '..........'}  {r['subject']}")
         return
 
     if args.cmd == "rm":
