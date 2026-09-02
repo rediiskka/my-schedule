@@ -1721,7 +1721,14 @@ function hashRead(){
 }
 function flash(btn,msg){const o=btn.textContent;btn.textContent=msg;setTimeout(()=>btn.textContent=o,1600);}
 function save(){localStorage.setItem(KEY,JSON.stringify(st));hashWrite();}
-function load(){try{Object.assign(st,JSON.parse(localStorage.getItem(KEY)||"{}"));}catch{}}
+// Сохранённое состояние старше кода: полей, добавленных позже, в нём нет, и
+// Object.assign затирает умолчание значением undefined. Так рубильник «Пары»
+// однажды погасил всё расписание у того, кто заходил на сайт раньше.
+function load(){
+  const saved=(()=>{try{return JSON.parse(localStorage.getItem(KEY)||"{}");}catch{return{};}})();
+  Object.keys(saved).forEach(k=>{ if(saved[k]!==undefined&&k in st)st[k]=saved[k]; });
+  if(typeof st.uni!=="boolean")st.uni=true;
+}
 
 /* ==== ПОДСКАЗКИ ПОИСКА ====================================================== */
 function showSugg(val){const box=$("suggbox");val=(val||"").trim().toLowerCase();
