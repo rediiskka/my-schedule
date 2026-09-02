@@ -1,0 +1,2258 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="cupcake" class="preload">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Моё расписание</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style"
+  href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap">
+<link rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap">
+<style>
+  /* ==== ТОКЕНЫ · палитра, размеры ============================================= */
+  /* ================= ПАЛИТРА =================
+     Все цвета живут только здесь. Ни одного hex в правилах и в скриптах —
+     иначе тёмная тема разъезжается, как было раньше.
+       *        — акцент (фон плашки)
+       *-ink    — насыщенный вариант того же цвета: контуры иконок, мелкий текст
+       *-soft   — мягкая заливка внутри иконок
+       --on-accent — текст поверх любой акцентной плашки           */
+  :root{
+    /* акценты */
+    --blue:#8FCEE6; --mint:#A9E0CC; --pink:#F3BBD0; --lav:#C9BEE6; --gold:#F4C58A;
+    --now:#EE6F97;
+    --blue-ink:#2C6A85; --mint-ink:#1F5C48; --pink-ink:#9A3159;
+    --lav-ink:#4B3B7A; --gold-ink:#8A5C18; --grey-ink:#6E7EA0;
+    --blue-soft:#DCE9F2; --mint-soft:#BFE7D5; --pink-soft:#F8C9D9;
+    --lav-soft:#DED6F3; --gold-soft:#F7CF8E; --grey-soft:#E4E8EE;
+    --on-accent:#22333c; --on-now:#FFFFFF;
+    /* Подгруппы: 1-я синяя, 2-я мятная, общая пара — приглушённый серо-голубой.
+       Общие пары не должны спорить с подгруппами, поэтому их тон тише. */
+    --sg1:#7FC0E8; --sg2:#8FDCC0; --sg0:#C3CEDA; --sg-strength:38%; --sg0-strength:30%;
+    /* поверхности и текст */
+    --app-bg:#FBF7FA; --panel:#FFFFFF; --panel-2:#F7F2F8;
+    --ink:#3A4A55; --muted:#8A97A0; --line:#EEE6EF;
+    --neutral-chip:#E8E2EC;
+    /* шапка */
+    --hero-a:#8FCEE6; --hero-b:#A9E0CC; --hero-c:#F3BBD0;
+    --hero-ink:#24333C; --hero-veil:rgba(255,255,255,.5); --hero-veil-2:rgba(255,255,255,.75);
+    --hero-card:rgba(255,255,255,.42); --hero-card-line:rgba(255,255,255,.6);
+    /* размеры */
+    --barh:62px; --panelw:266px; --maxw:1040px; --gut:18px;
+  }
+  html[data-theme="dracula"]{
+    /* акценты глубже, текст на них светлый — иначе плашки сливаются с тёмным фоном */
+    --blue:#3F7F9B; --mint:#3E8A70; --pink:#A9527A; --lav:#6B5DA6; --gold:#A97C3C;
+    --now:#FF7FA6;
+    --blue-ink:#8FCEE6; --mint-ink:#A9E0CC; --pink-ink:#F3BBD0;
+    --lav-ink:#C9BEE6; --gold-ink:#F4C58A; --grey-ink:#A6B0C4;
+    --blue-soft:#26404F; --mint-soft:#24463A; --pink-soft:#4A2436;
+    --lav-soft:#332B52; --gold-soft:#4A3620; --grey-soft:#2B3040;
+    --on-accent:#F3F7FA; --on-now:#2A1520;
+    --app-bg:#16151F; --panel:#211F2E; --panel-2:#2A2740;
+    --ink:#ECEAF6; --muted:#A69FC2; --line:#332F47;
+    --neutral-chip:#37324E;
+    --sg1:#3F7F9B; --sg2:#3E8A70; --sg0:#454E60; --sg-strength:46%; --sg0-strength:42%;
+    --hero-a:#2C4358; --hero-b:#2B4A45; --hero-c:#4A2E44;
+    --hero-ink:#EDEAF6; --hero-veil:rgba(255,255,255,.12); --hero-veil-2:rgba(255,255,255,.2);
+    --hero-card:rgba(20,15,30,.35); --hero-card-line:rgba(255,255,255,.12);
+  }
+  html[data-theme="dracula"] mark{background:var(--lav);color:var(--on-accent)}
+
+  /* ==== БАЗА · сброс, типографика ============================================= */
+  *{box-sizing:border-box}
+  body{margin:0;overflow-x:hidden;background:var(--app-bg);color:var(--ink);
+       font-family:"Manrope",-apple-system,"Segoe UI",Roboto,sans-serif,
+       "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla"}
+  .font-display{font-family:"Fraunces",Georgia,serif,
+    "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla"}
+  mark{background:var(--gold);color:var(--on-accent);border-radius:4px;padding:0 2px}
+  /* до первой отрисовки анимации выключены — иначе на обновлении страницы
+     видно, как панель заезжает на своё место */
+  .preload *,.preload *::before,.preload *::after{transition:none!important;animation:none!important}
+  /* поля ввода и списки — свои, без внешних библиотек */
+  [hidden],.hidden{display:none!important}
+
+  /* Фокус виден при работе с клавиатуры. Свои кнопки не имеют его по умолчанию,
+     а без него страницу нельзя пройти табом. */
+  :focus-visible{outline:2px solid var(--blue-ink);outline-offset:2px;border-radius:8px}
+  .ctl:focus-visible,.multi-btn:focus-visible{outline-offset:1px}
+
+  /* ==== ИКОНКИ ================================================================ */
+  /* эмодзи всегда цветные, каким бы шрифтом ни был набран соседний текст */
+  /* свой набор иконок: контурные SVG, наследуют цвет текста и размер шрифта */
+  .ic{width:1.05em;height:1.05em;flex:none;vertical-align:-.16em;
+    fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+  /* ==== ПРИМИТИВЫ · контейнер, поля =========================================== */
+  .ctl{width:100%;height:34px;box-sizing:border-box;padding:0 10px;border-radius:10px;
+    border:1px solid var(--line);background:var(--panel);color:var(--ink);
+    font-family:inherit;font-size:13px;font-weight:600;outline:0}
+  .ctl::placeholder{color:var(--muted);font-weight:500}
+  .ctl:focus{border-color:var(--blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 28%,transparent)}
+  select.ctl{cursor:pointer;padding-right:28px;-webkit-appearance:none;appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238A97A0' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 10px center}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 var(--gut)}
+  /* horizontal scroll wrapper (mobile) */
+  .hscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+  /* блок «ничего не найдено» — отдельное имя: раньше звался .empty и его отступ
+     в 56px прилетал пустым ячейкам месяца, отчего сетка разъезжалась */
+  .emptystate{text-align:center;color:var(--muted);padding:56px 20px}
+  .emptystate .big{font-size:34px;opacity:.5}
+  .emptystate .big .ic{width:38px;height:38px;stroke-width:1.5}
+
+  /* ==== ПЛАШКИ ================================================================ */
+  /* у плашек своя обводка — на тёмной теме фон не теряется на тёмной карточке */
+  .pill,.wtag,.mabbr,.badge-now,.badge-next,.today-pill{
+    box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ink) 16%,transparent)}
+  .pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;color:var(--on-accent);white-space:nowrap}
+  .pill.sg2{background:var(--sg2);color:var(--on-accent)}
+
+  /* Если человек просил систему уменьшить анимацию — не двигаем ничего. */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important}
+  }
+
+  /* ==== ЭКРАН ПАРОЛЯ =========================================================== */
+  /* Личная страница на публичном репозитории: пароль — барьер от случайных
+     заходов по ссылке, а не защита данных. Расписание пар и так публично видно
+     в raspisanie-3bi1, а личные задачи никогда не покидают localStorage браузера. */
+  .gate{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
+    background:var(--app-bg);padding:20px}
+  .gate-card{width:100%;max-width:320px;background:var(--panel);border:1px solid var(--line);
+    border-radius:18px;padding:28px;display:flex;flex-direction:column;gap:12px;text-align:center;
+    box-shadow:0 24px 60px rgba(60,40,70,.16)}
+  .gate-card h1{font-size:21px;margin:0}
+  .gate-card p{color:var(--muted);font-size:13px;margin:0}
+  .gate-card .side-btn{justify-content:center}
+  .gate-error{color:var(--pink-ink)}
+
+  /* ==== РАСКЛАДКА · слои, панель, лист ======================================== */
+  /* ---------- РАСКЛАДКА ----------
+     #main
+       .ribbon  — баннер во всю ширину, не двигается никогда
+       #cols
+         #sidebar — меню
+         #below   — лист с расписанием
+
+     Узкое окно: меню — фиксированная шторка у края, спрятана под листом; лист съезжает на --shift.
+     Широкое окно (body.wide): меню — обычная колонка рядом с листом, липкая средствами браузера,
+     поэтому при скролле идёт с контентом как влитая, без пересчётов на JS. */
+  #main{position:relative;z-index:10}
+  #cols{display:flex;align-items:flex-start}
+  /* лист = центральная колонка, непрозрачная: в закрытом виде панель прячется ровно под ней */
+  #below{position:relative;z-index:2;width:100%;max-width:var(--maxw);margin:0 auto;min-height:100vh;
+    background:var(--app-bg);
+    transform:translateX(var(--shift,0px));transition:transform .25s}
+  /* Панель — липкая колонка средствами браузера, без пересчётов на скролле.
+     На узком экране она не занимает места в раскладке (отрицательный внешний отступ)
+     и задвинута под лист; при открытии панель и лист разъезжаются навстречу. */
+  #sidebar{position:sticky;top:0;height:100vh;width:var(--panelw);flex:none;order:2;z-index:1;
+    display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--line);
+    margin-left:calc(-1 * var(--panelw));
+    transform:translateX(var(--panel-shift,0px));transition:transform .25s}
+  body.side-left #sidebar{order:0;margin-left:0;margin-right:calc(-1 * var(--panelw));
+    border-left:0;border-right:1px solid var(--line)}
+  /* Смена стороны использует то же движение, что и кнопка: панель уезжает под центр,
+     невидимой переносится и выезжает обратно. Отдельной анимации для этого нет. */
+  body.no-anim #sidebar,body.no-anim #below{transition:none}
+  /* Панель толкает контент, а не накрывает — ни затенения, ни перехвата кликов.
+     Закрывают её той же кнопкой, что и открыли. */
+  #overlay{display:none}
+  /* Бокового поля хватает на панель целиком: она занимает своё место рядом с контентом */
+  body.wide #sidebar{margin-left:0;margin-right:0}
+  body.wide.side-left #sidebar{margin-left:var(--gapend,0px);margin-right:0}
+  body.wide #below{flex:0 0 auto;width:var(--bw);max-width:none;margin:0;transform:none}
+  body.wide .wrap{width:var(--maxw);max-width:none;margin-left:var(--cl,0px);margin-right:0}
+  /* hero живёт вне листа и во всю ширину окна, поэтому у него свой отступ —
+     абсолютный левый край центральной колонки, а не отступ внутри листа */
+  body.wide .ribbon .wrap{margin-left:var(--gutter,0px)}
+  body.wide .bar{width:var(--maxw);margin-left:var(--cl,0px)}
+  body.wide .bar .wrap{width:100%;margin-left:0}
+  body.wide #overlay{display:none}
+  body.wide #burger{display:none}
+  .spacer{flex:1}
+  body.side-left #burger{order:-1}
+
+  /* ==== МЕНЮ ================================================================== */
+  /* sidebar */
+  /* шапка меню повторяет центральную полосу: та же высота, фон и нижняя линия */
+  .side-head{flex:none;display:flex;align-items:center;gap:8px;padding:12px 14px;
+    min-height:var(--barh);box-sizing:border-box;
+    background:color-mix(in srgb,var(--app-bg) 90%,transparent);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line)}
+  .side-head .dot{flex:none;display:inline-flex;color:var(--pink)}
+  .side-head .dot .ic{width:18px;height:18px;stroke-width:2.2}
+  .side-title{flex:1;min-width:0;font-weight:700;font-size:15px;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .side-body{flex:1;min-height:0;overflow-y:auto;padding:10px 12px 16px}
+  .side-h{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    font-weight:700;margin:9px 0 4px;padding-left:10px}
+  .side-body > .side-h:first-child{margin-top:2px}
+  .side-btn{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:0;
+    background:transparent;color:var(--ink);padding:5px 10px;border-radius:10px;cursor:pointer;
+    font-size:13.5px;font-weight:600}
+  .side-btn:hover{background:var(--panel-2)}
+  .side-btn.active{background:linear-gradient(90deg,var(--blue),var(--mint));color:var(--on-accent)}
+  .side-field{display:flex;flex-direction:column;gap:5px;margin:10px 0}
+  .side-field label{font-size:11.5px;color:var(--muted);font-weight:600;padding-left:10px;line-height:1.2}
+  .side-row{display:flex;align-items:stretch;gap:6px;margin:0}
+  .actbtn{flex:1;min-width:0;border:0;border-radius:10px;cursor:pointer;background:var(--panel-2);
+    color:var(--ink);padding:8px 6px;font-size:12.5px;font-weight:700;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .actbtn.danger{color:var(--now)}
+  .actbtn:hover{filter:brightness(.96)}
+  .segrow{display:flex;align-items:center;gap:9px;margin:13px 0 2px}
+  .seg-lab{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    font-weight:700;flex:none;padding-left:10px}
+  .seg{flex:1;display:flex;gap:3px;background:var(--panel-2);border-radius:999px;padding:3px}
+  .seg button{flex:1;border:0;background:transparent;color:var(--muted);font-family:inherit;
+    font-size:12px;font-weight:700;padding:6px 4px;border-radius:999px;cursor:pointer;
+    transition:background .18s,color .18s}
+  .seg button:hover{color:var(--ink)}
+  .seg button.active{background:linear-gradient(90deg,var(--blue),var(--mint));color:var(--on-accent);
+    box-shadow:0 1px 4px rgba(80,60,90,.14)}
+  .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 8px;margin:0}
+  .fgrid .side-field{margin:10px 0}
+  .daterange{display:flex;align-items:center;gap:2px;background:var(--panel);
+    border:1px solid var(--line);border-radius:9px;padding:4px 6px;height:34px}
+  .daterange:focus-within{border-color:var(--blue);box-shadow:0 0 0 2px color-mix(in srgb,var(--blue) 35%,transparent)}
+  .daterange input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);
+    font-size:11.5px;font-weight:600;font-family:inherit;padding:0;outline:0}
+  .daterange input::-webkit-calendar-picker-indicator{padding:0;margin:0;opacity:.5;cursor:pointer;
+    width:13px;height:13px}
+  .dr-sep{color:var(--muted);font-size:11px;flex:none}
+  /* мультивыбор преподавателей */
+  .multi{position:relative}
+  .multi-btn{text-align:left;cursor:pointer;padding-right:28px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238A97A0' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 10px center;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .multi-list{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:40;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:5px;
+    max-height:240px;overflow-y:auto;box-shadow:0 14px 34px rgba(80,60,90,.18)}
+  .multi-list label{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;
+    font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer;white-space:normal}
+  .multi-list label:hover{background:var(--panel-2)}
+  .multi-list input{accent-color:var(--blue);flex:none;margin:0}
+  /* тот же сегментный тумблер, что и в меню, только на светлом фоне полосы */
+  .seg-bar{flex:none;background:var(--panel);border:1px solid var(--line)}
+  .seg-bar button{flex:none;padding:6px 14px}
+
+  /* ==== ШАПКА · hero и погода ================================================= */
+  /* порядок слоёв: баннер и лист всегда НАД панелью, панель никогда ничего не перекрывает */
+  .ribbon{position:relative;z-index:2}
+  /* ribbon */
+  .ribbon{background:linear-gradient(100deg,var(--hero-a) 0%,var(--hero-b) 52%,var(--hero-c) 100%);
+    color:var(--hero-ink);padding:22px 0 26px}
+  .ribbon .inner{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  .ribbon .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:700;opacity:.72}
+  .ribbon h1{font-size:clamp(26px,4.5vw,40px);margin:5px 0 2px;font-weight:600}
+  .ribbon .sub{font-weight:600;opacity:.8;font-size:14px}
+  .h1row{display:flex;align-items:center;gap:12px}
+  .theme-btn{border:0;background:var(--hero-veil);width:38px;height:38px;border-radius:50%;
+    font-size:18px;cursor:pointer;line-height:1;flex:none}
+  .theme-btn:hover{background:var(--hero-veil-2)}
+  
+  /* weather hero */
+  /* размер задан заранее: пока грузится погода, шапка не меняет высоту */
+  .weather{display:flex;align-items:center;gap:12px;background:var(--hero-card);
+    border:1px solid var(--hero-card-line);border-radius:18px;padding:12px 16px;
+    width:328px;min-height:109px;box-sizing:border-box;
+    backdrop-filter:blur(6px)}
+    .weather .w-emoji{font-size:38px;line-height:1;color:var(--ink);opacity:.85}
+  .weather .w-emoji .ic{width:36px;height:36px;stroke-width:1.6}
+  .weather .w-temp{font-size:26px;font-weight:700;font-family:"Fraunces",serif;line-height:1}
+  .weather .w-sub{font-size:12px;font-weight:600;opacity:.8}
+  .weather .w-advice{font-size:12px;margin-top:3px;max-width:230px}
+
+  /* ==== ПОЛОСА · неделя, виды, бургер ========================================= */
+  #burger{order:3}
+  /* topbar */
+  /* высота полосы едина для центра и меню */
+  /* полоса — по ширине центральной колонки (как в спеке), иначе её край наезжает на меню */
+  .bar{position:sticky;top:0;z-index:30;min-height:var(--barh);box-sizing:border-box;
+    background:color-mix(in srgb,var(--app-bg) 90%,transparent);
+    backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  /* .bar-inner — это сам .wrap, поэтому только вертикальные отступы:
+     шорткат padding убил бы горизонтальные 18px из .wrap.
+     11, а не 12: вместе с нижней рамкой полоса должна уложиться ровно в --barh,
+     иначе она на пиксель выше шапки меню и общая линия раздваивается. */
+  .bar-inner{display:flex;align-items:center;gap:10px;padding-top:11px;padding-bottom:11px;flex-wrap:nowrap}
+  /* переключатель недели — единый контрол: стрелки, неделя и чип живут в одной капсуле */
+  .weekpick{display:flex;align-items:center;flex:1 1 auto;min-width:0;max-width:360px;
+    background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px}
+  .weekpick:focus-within{border-color:var(--blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 28%,transparent)}
+  .wnav{flex:none;width:30px;height:30px;border:0;border-radius:50%;background:transparent;
+    color:var(--muted);font-size:19px;line-height:1;cursor:pointer;display:grid;place-items:center;
+    font-family:inherit;transition:background .15s,color .15s}
+  .wnav:hover{background:var(--panel-2);color:var(--ink)}
+  .wnav:active{transform:scale(.94)}
+  .wsel{position:relative;display:flex;align-items:center;flex:1 1 auto;min-width:0}
+  #week{width:100%;min-width:0;height:30px;border:0;outline:0;background:transparent;cursor:pointer;
+    color:var(--ink);font-family:inherit;font-size:13.5px;font-weight:700;padding:0 8px;
+    -webkit-appearance:none;appearance:none;text-overflow:ellipsis}
+  .wsel-end{position:absolute;right:6px;top:0;bottom:0;display:flex;align-items:center;gap:10px;
+    pointer-events:none}
+  .wcaret{width:0;height:0;border-left:4.5px solid transparent;border-right:4.5px solid transparent;
+    border-top:5px solid var(--muted);flex:none}
+  #burger{flex:none;width:34px;height:34px;font-size:16px;background:var(--panel);
+    border:1px solid var(--line);color:var(--ink)}
+  .wtag{font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:4px 10px;border-radius:999px;
+    color:var(--on-accent);white-space:nowrap}
+  .wtag.even{background:var(--mint)} .wtag.odd{background:var(--pink)}
+  .wt-short{display:none}
+  .search{flex:1;min-width:190px;position:relative}
+  .search .ic{position:absolute;left:10px;top:50%;transform:translateY(-50%);
+    width:15px;height:15px;color:var(--muted);pointer-events:none}
+  .search .ctl{padding-left:31px}
+  .suggbox{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--panel);
+    border:1px solid var(--line);border-radius:14px;box-shadow:0 16px 40px rgba(80,60,90,.18);
+    z-index:60;overflow:hidden;max-height:340px;overflow-y:auto;padding:6px}
+  .sugg-item{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:10px;cursor:pointer;
+    font-size:14px;font-weight:600;color:var(--ink)}
+  .sugg-item:hover{background:var(--panel-2)}
+  .sugg-item .si{width:8px;height:8px;border-radius:50%;flex:none}
+  .sugg-item .sc{font-size:11px;color:var(--muted);font-weight:600;margin-left:auto}
+
+  /* ==== ВИД: СПИСОК =========================================================== */
+  /* list */
+  /* Отступ, чтобы прокрутка к сегодняшнему дню не заводила его под липкую шапку. */
+  .day{margin:20px 0;scroll-margin-top:calc(var(--barh) + 12px)}
+  .day.today{border:2px solid var(--gold);border-radius:18px;padding:10px 14px;
+    background:color-mix(in srgb,var(--gold) 9%, transparent)}
+  .day-head{display:flex;align-items:baseline;gap:10px;margin:0 0 10px}
+  .day-name{font-size:19px;font-weight:700}
+  .day-date{color:var(--muted);font-weight:600;font-size:14px}
+  .today-pill{font-size:11px;font-weight:700;background:var(--gold);color:var(--on-accent);padding:2px 8px;border-radius:999px}
+  .weekhead{display:flex;align-items:center;gap:10px;margin:26px 0 6px}
+  .weekhead .day-date{font-size:13px}
+  /* Отступы одинаковые у всех строк — иначе «сейчас/ближайшая» сдвигали колонки.
+     Рамка у них рисуется через outline: он не занимает места в раскладке. */
+  .pair{display:grid;grid-template-columns:92px 1fr;gap:14px;padding:10px 12px;
+    border-top:1px solid var(--line);border-radius:16px}
+  .pair:first-of-type{border-top:0}
+  .pair-time{color:var(--muted);font-weight:600;font-size:13px;line-height:1.45}
+  .pair-time .n{display:block;color:var(--ink);font-size:15px;font-weight:700}
+  .badge-now,.badge-next{display:inline-block;margin-top:5px;font-size:10px;font-weight:700;
+    padding:2px 7px;border-radius:999px}
+  .badge-now{background:var(--now);color:var(--on-now)}
+  .badge-next{background:var(--blue);color:var(--on-accent)}
+  .stack{display:flex;flex-direction:column;gap:10px}
+  /* Полоска подгруппы — накладкой, а не рамкой: рамка у всех карточек одинаковая 1px,
+     поэтому текст и плашки стоят на одной вертикали в любой строке. */
+  .lesson{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);
+    border-radius:14px;padding:12px 14px;box-shadow:0 2px 10px rgba(90,70,100,.05)}
+  .lesson::before,.cols .sgcol::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
+    background:var(--stripe,var(--line));z-index:1}
+  .pair.now{background:color-mix(in srgb,var(--now) 7%,transparent);
+    outline:2.5px solid var(--now);outline-offset:-2.5px}
+  .pair.next{background:color-mix(in srgb,var(--blue) 7%,transparent);
+    outline:2.5px dashed var(--blue);outline-offset:-2.5px}
+  .pair.now .lesson,.pair.next .lesson{box-shadow:none}
+  /* пара на две подгруппы: 1-я — голубая секция, 2-я — мятная */
+  /* Сдвоенная пара — ОДНА карточка: половины разделены пунктиром, а не разъехались
+     двумя плашками. Акцент у неё серо-голубой, цвета подгрупп живут внутри половин.
+     Отступ слева тот же, что у одиночной карточки (1 + 14 = 15px). */
+  .lesson.group{background:var(--panel);padding:0;--stripe:var(--sg0)}
+  .lesson.group::before{display:block}
+  .cols{display:flex;gap:0;align-items:stretch}
+  /* прижимаем к верху: при центрировании более короткая половина съезжала вниз
+     и строки «время + подгруппа» переставали быть на одной линии */
+  .cols .sgcol{position:relative;flex:1 1 0;min-width:0;
+    display:flex;align-items:flex-start;padding:12px 14px}
+  .cols .sgcol::before{display:none}
+  .cols .sgcol + .sgcol{border-left:1.5px dashed color-mix(in srgb,var(--ink) 26%,transparent)}
+  .cols .sgcol .row{flex:1}
+  /* время внутри карточки — когда у подгрупп оно разное; выглядит так же,
+     как время слева, чтобы расписание читалось одним языком */
+  .l-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+  .l-time{color:var(--muted);font-weight:700;font-size:12.5px;letter-spacing:.01em}
+  /* заметка к занятию: свёрнута, раскрывается по клику */
+  .note{margin-top:6px;font-size:12px;color:var(--muted)}
+  .note summary{display:flex;align-items:center;gap:5px;cursor:pointer;
+    color:var(--blue-ink);list-style:none;min-width:0}
+  /* в свёрнутом виде видно начало заметки, а не безликое «Заметка» */
+  /* в свёрнутом виде — короткое начало, чтобы заметка не растягивалась на всю карточку */
+  .note-peek{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
+    max-width:38ch;font-weight:600}
+  .note-label{display:none;font-weight:700}
+  .note[open] .note-peek{display:none}
+  .note[open] .note-label{display:inline}
+  .note-full{color:var(--muted)}
+  .note summary::-webkit-details-marker{display:none}
+  .note summary:hover{filter:brightness(1.1)}
+  .note[open] summary{margin-bottom:4px}
+  .note>div{line-height:1.45}
+  .lesson .subj{font-family:"Fraunces",Georgia,serif,"Segoe UI Emoji","Apple Color Emoji";font-size:16px;font-weight:600;line-height:1.25}
+  .lesson .meta{display:flex;flex-wrap:wrap;gap:7px 13px;margin-top:7px;color:var(--muted);font-size:13px;font-weight:500}
+  .lesson .meta b{color:var(--ink);font-weight:600}
+  .lesson .meta .ic{color:var(--muted)}
+  .row{display:flex;gap:14px;align-items:center}
+  .linfo{flex:1;min-width:0}
+  .room-side{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+    background:var(--panel-2);border-radius:14px;padding:10px 8px;width:104px;flex:none}
+  .room-side .rm{font-size:20px;display:flex;align-items:center;gap:5px;justify-content:center;font-weight:700;color:var(--ink);white-space:nowrap;font-family:"Fraunces",serif}
+  .room-side .rl{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-top:2px}
+  .pair.now .room-side{background:var(--now)} .pair.now .room-side .rm,.pair.now .room-side .rl{color:var(--on-now)}
+  .selfstudy{background:var(--mint-soft);border:1px dashed var(--mint);color:var(--mint-ink);
+    border-radius:14px;padding:13px 16px;font-weight:700}
+  /* Сайт личный: чужая подгруппа отфильтрована в match() и до заливки не
+     доходит. Остаются два состояния — моя пара (мятная) и общая (серо-голубая). */
+  .lesson.sgtint0,.cols .sgcol.sgtint0,.wk td.c.sgtint0,.mcell.sgtint0{
+    background:color-mix(in srgb,var(--sg0) var(--sg0-strength),var(--panel))}
+  .lesson.sgtint0{--stripe:var(--sg0)}
+  .lesson.sgtint2,.cols .sgcol.sgtint2,.wk td.c.sgtint2,.mcell.sgtint2{
+    background:color-mix(in srgb,var(--sg2) var(--sg-strength),var(--panel))}
+
+  /* ==== ВИД: НЕДЕЛЯ =========================================================== */
+  /* week grid */
+  .wk{width:100%;min-width:660px;border-collapse:separate;border-spacing:6px;table-layout:fixed}
+  .wk th{font-size:12px;color:var(--muted);font-weight:700;padding:4px}
+  .wk th.today,.wk td.today{background:color-mix(in srgb,var(--gold) 14%,transparent);border-radius:10px}
+  .wk td.tm{font-size:11px;color:var(--muted);font-weight:700;text-align:center;width:64px}
+  .wk td.tm b{display:block;color:var(--ink);font-size:13px}
+  .wk td.c{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:5px;vertical-align:top}
+  .wk td.c.now{border-color:var(--now);box-shadow:0 0 0 2px color-mix(in srgb,var(--now) 25%,transparent)}
+  .wk-self{font-size:15px;line-height:1.2;text-align:center;color:var(--mint-ink)}
+  .selfline{justify-content:center;font-size:14px;color:var(--mint-ink)}
+  .wk td.tm.now{background:var(--now);border-radius:8px}
+  .wk td.tm.now,.wk td.tm.now b{color:var(--on-now)}
+  .wk td.tm.next{background:color-mix(in srgb,var(--blue) 22%,transparent);border-radius:8px}
+
+  /* ==== ВИД: МЕСЯЦ ============================================================ */
+  .mcell:not(.empty),.wk td.c{cursor:pointer}
+  /* month */
+  /* Дни без обычных пар занимают узкую колонку. Какие это дни — решает разметка
+     по данным: у разных групп самостоятельная работа в разные дни. */
+  .mgrid{display:grid;gap:4px;min-width:560px}
+  .mgrid .quiet{opacity:.7;font-size:11px}
+  .mgrid .mh.quiet{opacity:.55}
+  .mgrid .mcell.quiet{padding:6px 3px}
+  .mgrid .mcell.quiet .mline{white-space:normal;justify-content:center;text-align:center;gap:2px}
+  .mgrid .mh{font-size:11px;color:var(--muted);font-weight:700;text-align:center;padding:2px}
+  .mcell{min-height:64px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:3px 5px;
+    cursor:pointer;transition:transform .1s}
+  .mcell.empty{background:transparent;border-color:transparent;cursor:default}
+  .mcell:hover:not(.empty){transform:translateY(-2px)}
+  .mcell.today{border:2px solid var(--gold)}
+  /* При включённых фильтрах цвет остаётся только там, где есть подходящие пары:
+     остальные дни гаснут, и нужное видно сразу. */
+  .mcell.dim,.wk td.c.dim{background:var(--panel);opacity:.4}
+  .mcell .mn{font-size:11px;font-weight:700;color:var(--muted);line-height:1.1}
+  .mcell.today .mn{color:var(--gold-ink)}
+  .mline{display:flex;align-items:center;gap:4px;font-size:10.5px;margin-top:1px;
+    white-space:nowrap;overflow:hidden;line-height:1.2}
+  .mabbr{display:inline-flex;align-items:center;justify-content:center;width:34px;height:17px;padding:0;
+    border-radius:999px;font-size:10px;font-weight:800;color:var(--on-accent);flex:none;letter-spacing:.02em}
+  .mtime{color:var(--ink);font-weight:700;font-size:9.5px;min-width:28px;flex:none}
+  .mroom{color:var(--muted);font-weight:700;font-size:10px;overflow:hidden;text-overflow:ellipsis}
+  /* Номер подгруппы у пары: в месяце фон клетки общий на весь день, поэтому
+     принадлежность каждой пары показывает кружок, а не заливка. */
+  .msg{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;flex:none;
+    border-radius:50%;font-size:8.5px;font-weight:800;color:var(--on-accent)}
+  .msg.sg2{background:var(--sg2)}
+
+  /* ==== ЗАЛИВКА ПО ПОДГРУППАМ · общая ========================================= */
+  .sgtint0{--stripe:var(--sg0)}
+  .sgtint2{--stripe:var(--sg2)}
+
+  /* ==== ЛИЧНЫЕ ЗАДАЧИ ========================================================== */
+  /* Карточка задачи — та же .lesson, полоска слева через --stripe красит её
+     по категории, а не по подгруппе; чекбокс и клик по карточке открывают форму. */
+  .lesson.task{cursor:pointer}
+  .lesson.task.task-done .subj{text-decoration:line-through;opacity:.6}
+  .task-check-wrap{flex:none;display:flex;align-items:center}
+  .task-check-wrap input{width:20px;height:20px;cursor:pointer;accent-color:var(--blue)}
+  #taskForm textarea.ctl{height:auto;min-height:64px;padding:8px 10px;resize:vertical}
+  #taskForm .side-row{margin-top:12px}
+
+  /* ==== ПОПАП ДНЯ ============================================================= */
+  /* попап дня — открывается кликом по ячейке в месяце и в неделе */
+  .pop{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
+    padding:20px;background:rgba(30,15,35,.34)}
+  .pop-card{width:min(640px,100%);max-height:min(82vh,100% - 8px);display:flex;flex-direction:column;
+    background:var(--app-bg);border:1px solid var(--line);border-radius:18px;overflow:hidden;
+    box-shadow:0 24px 60px rgba(60,40,70,.28)}
+  .pop-head{flex:none;display:flex;align-items:center;gap:10px;padding:12px 14px;
+    min-height:var(--barh);box-sizing:border-box;border-bottom:1px solid var(--line);
+    background:var(--panel)}
+  .pop-title{flex:1;min-width:0;font-weight:700;font-size:15px}
+  /* flex:1 задаёт базис 0 — карточка схлопывалась до шапки и тело сразу скроллилось.
+     Нужен естественный размер, а прокрутка — только если контент правда не влез. */
+  .pop-body{flex:0 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+    padding:6px 16px 18px}
+  .pop-body .day{margin:0}
+  .pop-body .day.today{border:0;padding:0;background:none}
+  .pop-body .day-head{display:none}
+  /* внутри попапа всё компактнее, чтобы день целиком помещался и на телефоне */
+  /* отступы одинаковые у всех строк, иначе «сейчас/ближайшая» съезжает вбок */
+  .pop-body .pair{grid-template-columns:52px 1fr;gap:10px;padding:7px 9px}
+  .pop-body .pair-time{font-size:11px;display:block}
+  .pop-body .pair-time .n{font-size:13px}
+  .pop-body .badge-now,.pop-body .badge-next{margin-top:3px;padding:1px 6px}
+  .pop-body .lesson{padding:8px 10px;border-radius:12px;box-shadow:none}
+  /* сдвоенная пара в попапе выглядит так же, как в списке: одна карточка,
+     половины вплотную, без белых краёв */
+  .pop-body .lesson.group{padding:0}
+  .pop-body .cols .sgcol{padding:8px 10px}
+  .pop-body .lesson .subj{font-size:13.5px;line-height:1.2}
+  .pop-body .lesson .meta{gap:4px 10px;margin-top:4px;font-size:11.5px}
+  .pop-body .pill{font-size:10px;padding:2px 7px}
+  .pop-body .row{gap:8px}
+  .pop-body .room-side{padding:4px 9px;border-radius:10px}
+  .pop-body .room-side .rm{font-size:15px}
+  .pop-body .room-side .rl{display:none}
+  .pop-body .selfstudy{padding:10px 12px;font-size:13px}
+
+  /* ==== ЛЕГЕНДА, ПОДВАЛ ======================================================= */
+  /* legend */
+  /* легенда слева, кнопка сохранения справа на её уровне */
+  /* Пустое расписание из-за фильтра пугает: человек мог забыть о нём и решить,
+     что пар нет. Плашка объясняет и даёт сбросить, не заходя в меню. */
+  .filternote{display:flex;align-items:center;gap:8px;margin:10px 0 0;padding:8px 12px;
+    background:color-mix(in srgb,var(--gold) 18%,var(--panel));border:1px solid var(--line);
+    border-radius:12px;font-size:13px;font-weight:600;color:var(--ink)}
+  .filternote .ic{width:16px;height:16px;flex:none;color:var(--gold-ink)}
+  .linkbtn{border:0;background:none;padding:0;margin-left:auto;cursor:pointer;
+    font:inherit;font-weight:800;color:var(--blue-ink);text-decoration:underline}
+  .linkbtn:hover{color:var(--now)}
+  .legend-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  .legend{padding:8px 0 2px;min-width:0}
+  .png-btn{flex:none;width:auto;margin-top:8px;white-space:nowrap}
+  @media(max-width:640px){
+    .legend-row{flex-direction:column;gap:6px}
+    .png-btn{margin-top:0;align-self:flex-start}
+  }
+  .lg-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
+  .lg-row+.lg-row{margin-top:5px}
+  .lg-title{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;
+    text-transform:uppercase}
+  .lg i.fill{width:16px;height:12px;border-radius:4px;border:1px solid var(--line)}
+  .lg{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted)}
+  .lg i{width:12px;height:12px;border-radius:50%;display:inline-block}
+  .lg i.ring{background:transparent!important;border:2px solid var(--gold)}
+  .lg i.ring.now{border-color:var(--now)}
+  footer{color:var(--muted);font-size:12px;line-height:1.5;padding:18px 0 60px;
+    border-top:1px solid var(--line);margin-top:26px}
+  .f-title{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;
+    color:var(--muted);margin-bottom:8px}
+  .f-list{list-style:none;margin:0;padding:0;display:grid;gap:6px 22px;
+    grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .f-list li{position:relative;padding-left:14px}
+  .f-list li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;
+    border-radius:50%;background:var(--line)}
+
+  /* ==== АДАПТИВ · узкие экраны ================================================ */
+  @media(max-width:1023px){ .weekpick{max-width:none} }
+  @media(max-width:640px){ .wt-full{display:none} .wt-short{display:inline} }
+  @media(max-width:1023px){ .seg-bar{display:none!important} }
+  @media(max-width:680px){
+    .cols{flex-direction:column}
+    .cols .sgcol + .sgcol{border-left:0;
+      border-top:1.5px dashed color-mix(in srgb,var(--ink) 26%,transparent)}
+  }
+  /* Телефон: попап во весь экран и максимально плотно, чтобы день
+     помещался по высоте без прокрутки. Подгруппы остаются в две колонки —
+     если их складывать друг под друга, высота удваивается. */
+  @media(max-width:640px){
+    .pop{padding:0}
+    .pop-card{width:100%;height:100%;max-height:100%;border-radius:0;border:0}
+    .pop-body{padding:0 8px 10px}
+    .pop-body .pair{grid-template-columns:42px 1fr;gap:7px;padding:5px 6px}
+    .pop-body .pair-time{font-size:10px}
+    .pop-body .pair-time .n{font-size:12px}
+    .pop-body .cols{flex-direction:row}
+    .pop-body .cols .sgcol{padding:6px 7px}
+    .pop-body .lesson{padding:6px 8px}
+    .pop-body .lesson .subj{font-size:12px;line-height:1.15}
+    .pop-body .lesson .meta{font-size:10.5px;gap:3px 7px;margin-top:3px}
+    .pop-body .pill{font-size:9.5px;padding:1px 6px}
+    .pop-body .row{flex-direction:column;align-items:flex-start;gap:4px}
+    /* аудитория строкой, а не крупной плашкой — она съедала половину ширины */
+    .pop-body .room-side{flex-direction:row;gap:4px;background:none;padding:0;width:auto}
+    .pop-body .room-side .rm{font-size:12px;font-family:inherit;font-weight:700}
+    .pop-body .room-side .rm .ic{width:12px;height:12px}
+  }
+  /* Телефон: месяц должен помещаться по высоте целиком.
+     Самая нагруженная ячейка — 6 строк, поэтому строки ужимаем, а не ячейку. */
+  @media(max-width:640px){
+    .mgrid{gap:4px;min-width:520px}
+    .mcell{min-height:0;padding:4px 5px;border-radius:9px}
+    .mcell .mn{font-size:10px;line-height:1.1}
+    .mline{font-size:9px;margin-top:1px;gap:3px}
+    .mabbr{width:28px;height:14px;font-size:8px}
+    .mtime{font-size:8px;min-width:22px}
+    .msg{width:11px;height:11px;font-size:7.5px}
+    .mgrid .mcell.quiet{padding:4px 2px}
+  }
+  @media(max-width:640px){
+    .pair{grid-template-columns:1fr;gap:5px}
+    /* колонка времени схлопывается в строку — время осталось бы дважды подряд,
+       поэтому слева оставляем только номер пары, время читается в карточке */
+    .pair-time{display:flex;gap:8px;align-items:baseline}
+    .pair-time .t{display:none}
+    .wk td.tm{width:44px}
+  }
+</style>
+</head>
+<body>
+<!-- ==== ЭКРАН ПАРОЛЯ ==== -->
+<div id="gate" class="gate">
+  <form id="gateForm" class="gate-card">
+    <h1 class="font-display">Моё расписание</h1>
+    <p>Личная страница. Введите пароль, чтобы войти.</p>
+    <input id="gateInput" class="ctl" type="password" placeholder="Пароль" autocomplete="current-password" autofocus />
+    <button class="side-btn active" type="submit">Войти</button>
+    <p id="gateError" class="gate-error" hidden>Неверный пароль, попробуйте ещё раз</p>
+  </form>
+</div>
+<script>
+// Хэш пароля, не сам пароль: его можно смело коммитить в публичный репозиторий.
+// Поменять пароль: в консоли браузера —
+//   crypto.subtle.digest('SHA-256', new TextEncoder().encode('новый-пароль'))
+//     .then(b => console.log([...new Uint8Array(b)].map(x => x.toString(16).padStart(2,'0')).join('')))
+// и вставить результат вместо строки ниже.
+const PASSWORD_HASH = '494a715f7e9b4071aca61bac42ca858a309524e5864f0920030862a4ae7589be'; // пароль по умолчанию: changeme123 — смените его
+async function sha256Hex(text){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function hideGate(){ document.getElementById('gate').hidden = true; }
+document.getElementById('gateForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const input = document.getElementById('gateInput');
+  const hash = await sha256Hex(input.value);
+  if (hash === PASSWORD_HASH) {
+    sessionStorage.setItem('schedule.unlocked', '1');
+    hideGate();
+    boot();
+  } else {
+    document.getElementById('gateError').hidden = false;
+    input.value = '';
+    input.focus();
+  }
+});
+// Барьер от случайных заходов по ссылке, а не защита: страница и её код видны
+// любому, а личные задачи не коммитятся в git — они живут только в localStorage.
+</script>
+<svg id="icons" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <!-- цветной набор: заливка мягкая, контур насыщенный, цвета из палитры сайта -->
+  <symbol id="i-flower" viewBox="0 0 24 24"><g stroke="none">
+    <circle cx="12" cy="5.8" r="3.2" fill="var(--pink)"/><circle cx="17.9" cy="10.1" r="3.2" fill="var(--pink-soft)"/>
+    <circle cx="15.7" cy="17.1" r="3.2" fill="var(--pink)"/><circle cx="8.3" cy="17.1" r="3.2" fill="var(--pink-soft)"/>
+    <circle cx="6.1" cy="10.1" r="3.2" fill="var(--pink)"/><circle cx="12" cy="12" r="2.7" fill="var(--gold)"/></g></symbol>
+
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="var(--blue-soft)" stroke="var(--blue-ink)"/><path d="M20 20l-3.6-3.6" stroke="var(--blue-ink)"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z" fill="var(--pink-soft)" stroke="var(--pink-ink)"/><circle cx="12" cy="10" r="2.4" fill="var(--panel)" stroke="var(--pink-ink)"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5" fill="var(--lav-soft)" stroke="var(--lav-ink)"/><path d="M4.8 20a7.2 7.2 0 0 1 14.4 0" fill="var(--lav-soft)" stroke="var(--lav-ink)"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24" stroke="var(--blue-ink)"><path d="M9.6 14.4l4.8-4.8"/><path d="M13.2 7.6l1.8-1.8a3.8 3.8 0 0 1 5.4 5.4l-1.8 1.8"/><path d="M10.8 16.4l-1.8 1.8a3.8 3.8 0 0 1-5.4-5.4l1.8-1.8"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.4" fill="var(--gold-soft)" stroke="var(--gold-ink)"/>
+    <path d="M12 2.6v2M12 19.4v2M2.6 12h2M19.4 12h2M5.4 5.4l1.4 1.4M17.2 17.2l1.4 1.4M18.6 5.4l-1.4 1.4M6.8 17.2l-1.4 1.4" stroke="var(--gold-ink)"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.4A8.5 8.5 0 0 1 9.6 4 8.5 8.5 0 1 0 20 14.4z" fill="var(--lav-soft)" stroke="var(--lav-ink)"/></symbol>
+  <symbol id="i-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="var(--gold-soft)" stroke="var(--lav-ink)"/>
+    <path d="M12 7a5 5 0 0 0 0 10z" fill="var(--lav-ink)" stroke="none"/>
+    <path d="M12 2.6v1.6M12 19.8v1.6M2.6 12h1.6M19.8 12h1.6" stroke="var(--lav-ink)"/></symbol>
+
+  <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19c0-7.7 5.7-13 14-13 0 7.7-5 13-13 13H5z" fill="var(--mint-soft)" stroke="var(--mint-ink)"/>
+    <path d="M5.6 18.4c3-4.2 6.3-6.6 9.5-7.7" stroke="var(--mint-ink)"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.2l2 5.9 5.9 2-5.9 2-2 5.9-2-5.9-5.9-2 5.9-2z" fill="var(--gold-soft)" stroke="var(--gold-ink)"/></symbol>
+
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h9.2a4.2 4.2 0 0 0 .6-8.4A6.2 6.2 0 0 0 5 12.8 3.4 3.4 0 0 0 7 18.5z" fill="var(--blue-soft)" stroke="var(--blue-ink)"/></symbol>
+  <symbol id="i-cloudsun" viewBox="0 0 24 24"><circle cx="8.4" cy="8.6" r="3" fill="var(--gold-soft)" stroke="var(--gold-ink)"/>
+    <path d="M8.4 3.4v1.4M4.1 8.6H2.7M5.2 5.4l-1-1M11.6 5.4l1-1" stroke="var(--gold-ink)"/>
+    <path d="M9.4 19.6h7.4a3.7 3.7 0 0 0 .4-7.4 5.4 5.4 0 0 0-10.2 2.2 2.9 2.9 0 0 0 2.4 5.2z" fill="var(--blue-soft)" stroke="var(--blue-ink)"/></symbol>
+  <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 15.5h9.2a4.2 4.2 0 0 0 .6-8.4A6.2 6.2 0 0 0 5 9.8 3.4 3.4 0 0 0 7 15.5z" fill="var(--blue-soft)" stroke="var(--blue-ink)"/>
+    <path d="M9 18.4l-.8 2.4M13 18.4l-.8 2.4M17 18.4l-.8 2.4" stroke="var(--blue-ink)"/></symbol>
+  <symbol id="i-snow" viewBox="0 0 24 24"><path d="M7 15.5h9.2a4.2 4.2 0 0 0 .6-8.4A6.2 6.2 0 0 0 5 9.8 3.4 3.4 0 0 0 7 15.5z" fill="var(--blue-soft)" stroke="var(--blue-ink)"/>
+    <path d="M9 19.4h.01M13 19.4h.01M17 19.4h.01M11 22h.01M15 22h.01" stroke="var(--blue-ink)" stroke-width="2.6"/></symbol>
+  <symbol id="i-storm" viewBox="0 0 24 24"><path d="M7 15.5h9.2a4.2 4.2 0 0 0 .6-8.4A6.2 6.2 0 0 0 5 9.8 3.4 3.4 0 0 0 7 15.5z" fill="var(--grey-soft)" stroke="var(--grey-ink)"/>
+    <path d="M13.4 17l-3 4h3l-2.4 3.6" stroke="var(--gold-ink)"/></symbol>
+  <symbol id="i-fog" viewBox="0 0 24 24"><path d="M7 14.5h9.2a4.2 4.2 0 0 0 .6-8.4A6.2 6.2 0 0 0 5 8.8 3.4 3.4 0 0 0 7 14.5z" fill="var(--grey-soft)" stroke="var(--grey-ink)"/>
+    <path d="M5 18h6M13.5 18h5.5M7.5 21h9" stroke="var(--grey-ink)"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3" fill="var(--blue-soft)" stroke="var(--blue-ink)"/><circle cx="8.5" cy="10" r="1.6" fill="var(--gold)" stroke="none"/><path d="M4.5 17l4.5-4.5 3.5 3.5 2.5-2.5 4.5 4" stroke="var(--blue-ink)"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="var(--blue-soft)" stroke="var(--blue-ink)"/><path d="M12 11v5" stroke="var(--blue-ink)"/><path d="M12 7.8h.01" stroke="var(--blue-ink)" stroke-width="2.4"/></symbol>
+  <symbol id="i-thermo" viewBox="0 0 24 24"><path d="M13.5 14.2V5.5a2 2 0 1 0-4 0v8.7a4 4 0 1 0 4 0z" fill="var(--pink-soft)" stroke="var(--pink-ink)"/></symbol>
+</svg>
+<script>
+/* Раскладка решается ДО первой отрисовки: скрипт страницы стоит в конце,
+   и без этого первый кадр рисуется по-старому, а потом всё прыгает.
+   Значения те же, что считает layoutVars() ниже, — он их просто подтвердит. */
+(function(){
+  var MENU=266, MAX=1040, d=document.documentElement, b=document.body;
+  var saved={}; try{ saved=JSON.parse(localStorage.getItem("sched_state_v2")||"{}"); }catch(e){}
+  var side=saved.side||"right";
+  /* тема — до первой отрисовки, иначе на тёмной системе мигает белым */
+  var theme=saved.theme||"auto";
+  var dark=theme==="dracula"||(theme==="auto"&&matchMedia("(prefers-color-scheme: dark)").matches);
+  d.setAttribute("data-theme",dark?"dracula":"cupcake");
+  var W=d.clientWidth, cw=Math.min(MAX,W), gutter=(W-cw)/2, wide=gutter>=MENU;
+  b.classList.toggle("wide",wide);
+  b.classList.toggle("side-left",side==="left");
+  var dir=side==="left"?1:-1;
+  d.style.setProperty("--panel-shift",(wide?0:dir*Math.round(gutter))+"px");
+  d.style.setProperty("--shift","0px");
+  if(wide){
+    d.style.setProperty("--gutter",Math.round(gutter)+"px");
+    d.style.setProperty("--gapend",Math.round(gutter-MENU)+"px");
+    d.style.setProperty("--bw",Math.round(W-gutter)+"px");
+    d.style.setProperty("--cl",Math.round(side==="left"?0:gutter)+"px");
+  }
+})();
+</script>
+
+<!-- ============ MAIN ============ -->
+<div id="main">
+  <header class="ribbon">
+    <div class="wrap inner">
+      <div>
+        <div class="eyebrow">пары 3БИ1 · плюс личные задачи</div>
+        <div class="h1row">
+          <h1 class="font-display">Моё расписание</h1>
+          <button id="theme" class="theme-btn" title="Тема оформления" aria-label="Тема оформления"><svg class="ic" aria-hidden="true"><use href="#i-auto"/></svg></button>
+        </div>
+        <div class="sub" id="range-sub"></div>
+      </div>
+      <div class="weather" id="weather"><div class="w-sub">погода…</div></div>
+    </div>
+  </header>
+
+  <div id="cols">
+  <aside id="sidebar">
+    <div class="side-head">
+      <span class="dot"><svg class="ic" aria-hidden="true"><use href="#i-flower"/></svg></span>
+      <span class="side-title">Моё расписание</span>
+      <button id="theme2" class="wnav" title="Тема оформления" aria-label="Тема оформления"><svg class="ic" aria-hidden="true"><use href="#i-auto"/></svg></button>
+    </div>
+    <div class="side-body">
+    <div class="side-h">Поиск</div>
+    <div class="search" style="margin:2px 0">
+      <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+      <input id="q" type="search" autocomplete="off" placeholder="предмет, препод, тип, аудитория…"
+             class="ctl" style="width:100%" />
+      <div id="suggbox" class="suggbox hidden"></div>
+    </div>
+
+    <div class="segrow">
+      <span class="seg-lab">Вид</span>
+      <div class="seg" role="group" aria-label="Вид расписания">
+        <button type="button" data-view="list">Список</button>
+        <button type="button" data-view="week">Неделя</button>
+        <button type="button" data-view="month">Месяц</button>
+      </div>
+    </div>
+
+    <div class="side-h">Период</div>
+    <button class="side-btn" data-scope="m1">Месяц вперёд</button>
+    <div class="side-field">
+      <label>Свой период</label>
+      <div class="daterange">
+        <input id="from" type="date" aria-label="Начало периода" />
+        <span class="dr-sep">–</span>
+        <input id="to" type="date" aria-label="Конец периода" />
+      </div>
+    </div>
+
+    <div class="side-h">Фильтры</div>
+    <!-- Подгруппы нет: сайт личный, пары чужой подгруппы уже не показываются
+         нигде (см. MY_SUBGROUP в match()) — отдельный переключатель не нужен. -->
+    <div class="side-field"><label for="f-day">День</label>
+      <select id="f-day" class="ctl"></select></div>
+    <div class="side-field"><label for="f-type">Тип пары</label>
+      <select id="f-type" class="ctl"></select></div>
+    <div class="side-field"><label for="f-teacher-btn">Преподаватели</label>
+      <div class="multi">
+        <button type="button" id="f-teacher-btn" class="ctl multi-btn" aria-expanded="false">Все</button>
+        <div id="f-teacher-list" class="multi-list hidden"></div>
+      </div></div>
+    <div class="side-row" style="margin-top:6px">
+      <button id="reset" class="actbtn danger" title="Сбросить поиск и фильтры"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg> Сбросить</button>
+      <button id="share" class="actbtn" title="Скопировать ссылку на текущий вид с фильтрами"><svg class="ic" aria-hidden="true"><use href="#i-link"/></svg> Поделиться</button>
+    </div>
+
+    <div class="side-h">Мои задачи</div>
+    <button id="addTask" class="side-btn" type="button">
+      <svg class="ic" aria-hidden="true"><use href="#i-star"/></svg> Добавить задачу</button>
+
+    <div class="segrow">
+      <span class="seg-lab">Меню</span>
+      <div class="seg" id="sideseg" role="group" aria-label="Сторона меню">
+        <button type="button" data-side="left">Слева</button>
+        <button type="button" data-side="right">Справа</button>
+      </div>
+    </div>
+    </div>
+  </aside>
+
+  <div id="below">
+    <div id="overlay"></div>
+    <div class="bar">
+      <div class="wrap bar-inner">
+        <div class="weekpick">
+          <button id="prev" class="wnav" aria-label="Предыдущая неделя">‹</button>
+          <div class="wsel">
+            <select id="week" aria-label="Неделя"></select>
+            <div class="wsel-end">
+              <span id="wtag" class="wtag"></span>
+              <span class="wcaret" aria-hidden="true"></span>
+            </div>
+          </div>
+          <button id="next" class="wnav" aria-label="Следующая неделя">›</button>
+        </div>
+        <div class="spacer"></div>
+        <div class="seg seg-bar" id="tabs" role="group" aria-label="Вид расписания">
+          <button type="button" data-view="list">Список</button>
+          <button type="button" data-view="week">Неделя</button>
+          <button type="button" data-view="month">Месяц</button>
+        </div>
+        <button id="burger" class="wnav" aria-label="Открыть меню"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      </div>
+    </div>
+
+    <div class="wrap legend-row">
+      <div id="legend" class="legend"></div>
+      <button id="png" class="actbtn png-btn" title="Сохранить текущий вид картинкой">
+        <svg class="ic" aria-hidden="true"><use href="#i-image"/></svg> Скачать PNG</button>
+    </div>
+    <div class="wrap"><div id="filternote" class="filternote" hidden>
+      <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+      <span>Показаны не все пары: включены фильтры</span>
+      <button type="button" id="reset-inline" class="linkbtn">Сбросить</button>
+    </div></div>
+    <main class="wrap"><div id="content"></div></main>
+    <div class="wrap"><footer id="footer"></footer></div>
+  </div>
+  </div>
+</div>
+
+<div id="daypop" class="pop hidden" role="dialog" aria-modal="true" aria-labelledby="daypop-t">
+  <div class="pop-card">
+    <div class="pop-head">
+      <div id="daypop-t" class="pop-title"></div>
+      <button id="daypop-x" class="wnav" aria-label="Закрыть"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div id="daypop-body" class="pop-body"></div>
+  </div>
+</div>
+
+<div id="taskpop" class="pop hidden" role="dialog" aria-modal="true" aria-labelledby="taskpop-t">
+  <div class="pop-card">
+    <div class="pop-head">
+      <div id="taskpop-t" class="pop-title">Новая задача</div>
+      <button id="taskpop-x" class="wnav" aria-label="Закрыть"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="pop-body">
+      <form id="taskForm">
+        <div class="side-field"><label for="tf-title">Название</label>
+          <input id="tf-title" class="ctl" type="text" required maxlength="120" /></div>
+        <div class="fgrid">
+          <div class="side-field"><label for="tf-date">Дата</label>
+            <input id="tf-date" class="ctl" type="date" required /></div>
+          <div class="side-field"><label for="tf-time">Время</label>
+            <input id="tf-time" class="ctl" type="time" /></div>
+        </div>
+        <div class="fgrid">
+          <div class="side-field"><label for="tf-duration">Минут</label>
+            <input id="tf-duration" class="ctl" type="number" min="5" step="5" placeholder="60" /></div>
+          <div class="side-field"><label for="tf-category">Категория</label>
+            <select id="tf-category" class="ctl">
+              <option value="study">Учёба</option>
+              <option value="work">Работа</option>
+              <option value="personal">Личное</option>
+              <option value="other">Другое</option>
+            </select></div>
+        </div>
+        <div class="side-field"><label for="tf-note">Заметка</label>
+          <textarea id="tf-note" class="ctl" maxlength="500"></textarea></div>
+        <div class="side-row">
+          <button id="tf-delete" type="button" class="actbtn danger" hidden><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg> Удалить</button>
+          <button type="submit" class="actbtn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ==== СОСТОЯНИЕ И КОНСТАНТЫ ================================================= */
+const DAYS=["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"];
+const SHORT=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
+const RU_MONTHS=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+const KEY="sched_state_v2";
+let DATA=null, DATE_MAP={}, MONTHS=[], SUGG=[];
+let st={view:"list",cur:0,scope:"week",from:"",to:"",term:"",fDay:"",fType:"",fTeachers:[],pop:null,theme:"auto",side:"right",monthPtr:0};
+const mq=window.matchMedia("(prefers-color-scheme: dark)");
+
+/* ==== УТИЛИТЫ =============================================================== */
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const esc=s=>(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function hl(s){const e=esc(s);if(!st.term)return e;
+  const t=esc(st.term).replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  try{return e.replace(new RegExp("("+t+")","ig"),"<mark>$1</mark>");}catch{return e;}}
+function pdate(s){const m=/^(\d{2})\.(\d{2})\.(\d{4})/.exec(s||"");return m?new Date(+m[3],+m[2]-1,+m[1]):null;}
+function keyOf(d){return d.getFullYear()+"-"+d.getMonth()+"-"+d.getDate();}
+function sameDay(a,b){return a&&b&&a.getFullYear()==b.getFullYear()&&a.getMonth()==b.getMonth()&&a.getDate()==b.getDate();}
+function eod(d){const x=new Date(d);x.setHours(23,59,59,999);return x;}
+const isSelf=l=>/самостоятельн/i.test(l.subject||"");
+
+function typeNorm(t){t=(t||"").toLowerCase();
+  if(t.startsWith("лекц"))return"Лекция";if(t.startsWith("практ"))return"Практика";
+  if(t.startsWith("семин"))return"Семинар";if(t.startsWith("лаборат"))return"Лабораторная";
+  if(t.startsWith("зач"))return"Зачёт";if(t.startsWith("экзам"))return"Экзамен";return"";}
+function typeColor(t){return{"Лекция":"var(--blue)","Практика":"var(--mint)","Семинар":"var(--lav)",
+  "Лабораторная":"var(--gold)","Зачёт":"var(--pink)","Экзамен":"var(--pink)"}[t]||"var(--neutral-chip)";}
+
+// Подпись пары приходит двумя строками: номер и время.
+const PAIR_NL=String.fromCharCode(10);
+const lines=t=>String(t||"").split(PAIR_NL);
+// Время пары: если у занятия есть своё (по субботам 3-5 пары идут иначе) — берём его.
+// Сайт показывает сразу верное время, а не отсылает «смотри внутри ячейки», как таблица.
+const pairLabelTime=p=>(lines((p&&p.pair)||"")[1]||"").trim();
+const lessonTime=(l,p)=>((l&&l.spectime)||pairLabelTime(p)||"").trim();
+// одно время на всю пару, если все занятия в ней идут одновременно
+function pairTime(p,lessons){
+  const ts=[...new Set((lessons||[]).map(l=>lessonTime(l,p)).filter(Boolean))];
+  return ts.length===1?ts[0]:pairLabelTime(p);
+}
+function pairTimes(label,dt){const m=/(\d{1,2}):(\d{2})\D+(\d{1,2}):(\d{2})/.exec(label||"");if(!m||!dt)return null;
+  const s=new Date(dt),e=new Date(dt);s.setHours(+m[1],+m[2],0,0);e.setHours(+m[3],+m[4],0,0);return[s,e];}
+const STOP=new Set(["в","и","по","на","с","о","для","к","от","до","при","за","из","под"]);
+function abbr(s){s=s||"";const w=s.split(/[\s\-–]+/).filter(x=>x&&!STOP.has(x.toLowerCase()));
+  let a=w.filter(x=>/[А-Яа-яA-Za-z]/.test(x)).map(x=>x[0].toUpperCase()).join("");
+  if(a.length<2)a=s.replace(/\s/g,"").slice(0,3).toUpperCase();return a.slice(0,4);}
+function centerToday(){requestAnimationFrame(()=>{
+  const cont=$("content").querySelector(".hscroll");const el=$("content").querySelector(".today");
+  if(!cont||!el)return;const cr=cont.getBoundingClientRect(),er=el.getBoundingClientRect();
+  cont.scrollLeft+=(er.left-cr.left)-(cont.clientWidth-er.width)/2;});}
+
+/* ==== ПОДГОТОВКА ДАННЫХ ===================================================== */
+function prep(){
+  DATE_MAP={};MONTHS=[];const seen=new Set();
+  DATA.weeks.forEach((w,wi)=>w.days.forEach((d,di)=>{
+    d.pairs.forEach(p=>{
+      p.lessons.forEach(l=>l.tn=typeNorm(l.type));
+      // Порядок: сначала по времени, при одинаковом — по аудитории.
+      // Ни одна подгруппа не «главная», цвет закреплён за подгруппой, а не за стороной.
+      const tmin=l=>{const m=/(\d{1,2}):(\d{2})/.exec(l.spectime||"");return m?+m[1]*60+ +m[2]:-1;};
+      p.lessons.sort((a,b)=>{
+        const ta=tmin(a), tb=tmin(b);
+        if(ta>=0&&tb>=0&&ta!==tb)return ta-tb;
+        const ra=a.room||"", rb=b.room||"";
+        const na=parseInt(ra,10), nb=parseInt(rb,10);
+        if(!isNaN(na)&&!isNaN(nb)&&na!==nb)return na-nb;
+        return ra.localeCompare(rb,"ru");
+      });
+    });
+    d._dt=pdate(d.date);
+    if(d._dt){DATE_MAP[keyOf(d._dt)]={wi,di};
+      // Месяц попадает в переключатель, только если в нём есть пары: семестр
+      // начинается 1 сентября, а первая неделя цепляет хвост августа без занятий.
+      const mk=d._dt.getFullYear()+"-"+d._dt.getMonth();
+      if(!seen.has(mk)&&d.pairs.some(p=>p.lessons.length)){
+        seen.add(mk);MONTHS.push({y:d._dt.getFullYear(),m:d._dt.getMonth()});}}
+  }));
+  MONTHS.sort((a,b)=>a.y-b.y||a.m-b.m);
+  annotateDateConflicts();
+}
+
+/* Занятие может быть подписано своей датой — тогда в таблице оно стоит в строке
+   одного дня, а дата в тексте указывает на другой. Это противоречие в источнике,
+   и сайт его не разрешает: занятие остаётся там, где стоит в таблице, а рядом
+   появляется заметка, чтобы человек знал и уточнил. */
+function annotateDateConflicts(){
+  DATA.weeks.forEach(w=>w.days.forEach(d=>d.pairs.forEach(p=>{
+    p.lessons.forEach(l=>{
+      if(!l.dateOverride||l.dateOverride===d.date)return;
+      const dt=pdate(l.dateOverride);
+      const other=dt?DAYS[(dt.getDay()+6)%7]:"";
+      const src=(l.note||"").replace(/,?\s*см\.\s*прим\.\s*\d+\.?/i,"").trim();
+      l.note="В таблице занятие стоит в строке «"+d.day.toLowerCase()+"» ("+d.date+"), "
+        +"но подписано датой "+l.dateOverride+(other?" — это "+other.toLowerCase():"")+". "
+        +"В каком из двух дней оно на самом деле — по таблице не понять, уточни."
+        +(src?" "+src.charAt(0).toUpperCase()+src.slice(1)+".":"");
+      l.conflict=true;
+    });
+  })));
+}
+function allBounds(){let mn=null,mx=null;for(const k in DATE_MAP){}
+  const all=[];DATA.weeks.forEach(w=>w.days.forEach(d=>{if(d._dt)all.push(d._dt);}));
+  all.sort((a,b)=>a-b);return[all[0],all[all.length-1]];}
+function weekDates(i){const ds=DATA.weeks[i].days.map(d=>d._dt).filter(Boolean).sort((a,b)=>a-b);return[ds[0],ds[ds.length-1]];}
+/* Подпись недели считаем по дням с парами: первая неделя семестра цепляет хвост
+   августа, и показывать его как начало учебной недели незачем. */
+function weekRange(i){
+  const ds=DATA.weeks[i].days.filter(d=>d._dt&&d.pairs.some(p=>p.lessons.length)).map(d=>d._dt);
+  if(!ds.length)return DATA.weeks[i].range||"";
+  const fmt=d=>d.toLocaleDateString("ru-RU");
+  return fmt(ds[0])+" – "+fmt(ds[ds.length-1]);
+}
+function todayWeek(){const now=new Date();for(let i=0;i<DATA.weeks.length;i++){const[a,z]=weekDates(i);
+  if(!a)continue;if(now<=eod(z))return i;}return DATA.weeks.length-1;}
+
+/* ==== ЛИЧНЫЕ ЗАДАЧИ ==========================================================
+   Пары приходят из data.json (публичное расписание группы). Личные задачи —
+   отдельный слой поверх них: хранятся только в localStorage этого браузера
+   и никогда не коммитятся в git. Совмещаются с парами по дате при отрисовке
+   (dayHTML/renderWeek/renderMonth), не трогая логику самих пар. */
+const TASK_KEY="schedule.tasks.v1";
+const TASK_CAT={
+  study:{label:"Учёба",color:"var(--blue)"},
+  work:{label:"Работа",color:"var(--gold)"},
+  personal:{label:"Личное",color:"var(--mint)"},
+  other:{label:"Другое",color:"var(--lav)"},
+};
+let TASKS=[];
+function loadTasks(){try{TASKS=JSON.parse(localStorage.getItem(TASK_KEY))||[];}catch{TASKS=[];}}
+function saveTasks(){localStorage.setItem(TASK_KEY,JSON.stringify(TASKS));}
+// Пары датированы строкой "ДД.ММ.ГГГГ", задачи — ISO из <input type=date>.
+function ruToIso(ru){const m=/^(\d{2})\.(\d{2})\.(\d{4})/.exec(ru||"");return m?`${m[3]}-${m[2]}-${m[1]}`:"";}
+function taskMatch(t){const hay=(t.title+" "+(t.note||"")).toLowerCase();return hay.includes(st.term);}
+function tasksForRu(ru){
+  const iso=ruToIso(ru);
+  return TASKS.filter(t=>t.date===iso).filter(t=>!st.term||taskMatch(t))
+    .sort((a,b)=>(a.time||"").localeCompare(b.time||"")||a.title.localeCompare(b.title,"ru"));
+}
+function upsertTask(task){
+  const i=TASKS.findIndex(t=>t.id===task.id);
+  if(i===-1)TASKS.push(task);else TASKS[i]=task;
+  saveTasks();render();
+}
+function deleteTask(id){TASKS=TASKS.filter(t=>t.id!==id);saveTasks();render();}
+function toggleTaskDone(id){const t=TASKS.find(t=>t.id===id);if(t){t.done=!t.done;saveTasks();render();}}
+
+/* ==== ФИЛЬТРЫ =============================================================== */
+// Сайт личный — своя подгруппа зашита здесь, а не выбирается в меню.
+// Пары другой подгруппы не показываются нигде: они не мои занятия.
+const MY_SUBGROUP="2";
+function match(l){
+  if(l.subgroup&&l.subgroup!==MY_SUBGROUP)return false;
+  if(st.fType&&l.tn!==st.fType)return false;
+  if(st.fTeachers.length&&!st.fTeachers.includes(l.teacher))return false;
+  if(st.term){const hay=(l.subject+" "+l.teacher+" "+l.room+" "+l.tn+" "+(l.raw||"")).toLowerCase();
+    if(!hay.includes(st.term))return false;}
+  return true;
+}
+function currentRange(){
+  const b=allBounds();const today=new Date();today.setHours(0,0,0,0);
+  if(st.scope==="week"){const[a,z]=weekDates(st.cur);return[a,eod(z)];}
+  if(st.scope==="sem")return[b[0],eod(b[1])];
+  if(st.scope==="m1"){const z=new Date(today);z.setMonth(z.getMonth()+1);return[today,eod(z)];}
+  if(st.scope==="m2"){const z=new Date(today);z.setMonth(z.getMonth()+2);return[today,eod(z)];}
+  if(st.scope==="custom"){const a=st.from?new Date(st.from):b[0];const z=st.to?new Date(st.to):b[1];return[a,eod(z)];}
+  return[b[0],eod(b[1])];
+}
+
+/* ==== ТЕКУЩАЯ И БЛИЖАЙШАЯ ПАРА ============================================== */
+let _mark="";
+const markKey=m=>JSON.stringify([m.cur,m.next]);
+function nowMarks(){
+  const now=new Date();let cur=null,next=null,best=Infinity;
+  DATA.weeks.forEach((w,wi)=>w.days.forEach((d,di)=>{if(!d._dt)return;
+    d.pairs.forEach((p,pi)=>{const real=p.lessons.filter(l=>!isSelf(l)&&l.subject);if(!real.length)return;
+      const t=pairTimes(pairTime(p,real),d._dt);if(!t)return;
+      if(now>=t[0]&&now<=t[1])cur={wi,di,pi};
+      if(t[0]>now&&(t[0]-now)<best){best=t[0]-now;next={wi,di,pi};}});}));
+  return{cur,next};
+}
+let M={cur:null,next:null};
+function markClass(wi,di,pi){
+  if(M.cur&&M.cur.wi==wi&&M.cur.di==di&&M.cur.pi==pi)return" now";
+  if(M.next&&M.next.wi==wi&&M.next.di==di&&M.next.pi==pi)return" next";
+  return"";}
+
+/* ==== ОТРИСОВКА · кирпичики карточки ======================================== */
+function roomSide(l){
+  return l.room?`<div class="room-side"><div class="rm"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg> ${hl(l.room)}</div><div class="rl">аудитория</div></div>`:"";
+}
+function linfo(l,timeText){
+  const pills=[];
+  if(l.tn)pills.push(`<span class="pill" style="background:${typeColor(l.tn)}">${hl(l.tn)}</span>`);
+
+
+  const meta=[];
+  if(l.teacher)meta.push(`<span><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg> <b>${hl(l.teacher)}</b></span>`);
+  // время и подгруппа — одна строка «когда и у кого», выше названия
+  // (чужая подгруппа отсеяна в match(), поэтому здесь всегда только моя)
+  const sg=l.subgroup?`<span class="pill sg${l.subgroup}">моя подгруппа</span>`:"";
+  const own=(timeText||sg)?`<div class="l-head">${timeText?`<span class="l-time">${esc(timeText)}</span>`:""}${sg}</div>`:"";
+  const note=l.note?`<details class="note"><summary><svg class="ic" aria-hidden="true"><use href="#i-info"/></svg>`
+    +`<span class="note-peek">${esc(l.note)}</span><span class="note-label">Заметка</span></summary>`
+    +`<div class="note-full">${esc(l.note)}</div></details>`:"";
+  // порядок в карточке всегда один: когда и у кого -> что -> какая пара -> кто ведёт -> заметка
+  return `<div class="linfo">${own}<div class="subj">${hl(l.subject)||"—"}</div>
+    ${pills.length?`<div class="meta">${pills.join(" ")}</div>`:""}
+    ${meta.length?`<div class="meta">${meta.join("")}</div>`:""}${note}</div>`;
+}
+function body(l,timeText){return `<div class="row">${linfo(l,timeText)}${roomSide(l)}</div>`;}
+// какой подгруппе принадлежит набор пар: "", одна из двух, либо обе (делим фон пополам)
+// Фильтры считаются включёнными, когда сужен состав пар, а не период показа.
+function filtersOn(){return !!(st.term||st.fType||st.fTeachers.length);}
+/* Список включённых фильтров словами — подпись под картинкой и в плашке над
+   расписанием: по картинке из беседы должно быть видно, что показаны не все пары. */
+function filterSummary(){
+  const parts=[];
+  if(st.fType)parts.push(st.fType);
+  if(st.fTeachers.length)parts.push(st.fTeachers.join(", "));
+  if(st.term)parts.push("поиск «"+st.term+"»");
+  return parts.join(" · ");
+}
+function sgTint(ls){
+  const real=(ls||[]).filter(l=>!isSelf(l));
+  if(!real.length)return"";
+  // чужая подгруппа отфильтрована в match() — здесь остаётся либо моя, либо общая
+  const subs=real.map(l=>l.subgroup).filter(Boolean);
+  if(subs.length)return" sgtint2";
+  return" sgtint0";                                // общая пара — смесь цветов
+}
+function lessonHTML(l,timeOf){
+  const tint=sgTint([l]);
+  return `<div class="lesson${tint}"${tint?"":` style="border-left-color:${typeColor(l.tn)}"`}>${body(l,timeOf?timeOf(l):"")}</div>`;
+}
+function pairBody(ls,timeOf){
+  if(ls.length<=1)return ls.map(l=>lessonHTML(l,timeOf)).join("");
+  return `<div class="lesson group"><div class="cols">`
+    +ls.map(l=>`<div class="sgcol${sgTint([l])}">${body(l,timeOf?timeOf(l):"")}</div>`).join("")
+    +`</div></div>`;
+}
+// Компактный чип задачи для недели и месяца — те же классы, что у mline/mabbr
+// у лекций/семинаров, поэтому не нужно ни одного нового CSS-правила под сетку.
+function taskChipHTML(t){
+  const cat=TASK_CAT[t.category];
+  return `<div class="mline task-chip" title="${esc(t.title)}${t.note?" · "+esc(t.note):""}">`
+    +`${t.time?`<span class="mtime">${esc(t.time)}</span>`:""}`
+    +`<span class="mabbr" style="background:${cat.color}">${abbr(t.title)}</span></div>`;
+}
+// Полная карточка задачи для списка и попапа дня — .lesson с полоской по
+// категории вместо подгруппы (--stripe работает одинаково в обоих случаях).
+function taskCardHTML(t){
+  const cat=TASK_CAT[t.category];
+  return `<div class="lesson task${t.done?" task-done":""}" style="--stripe:${cat.color}" data-task-id="${t.id}">
+    <div class="row">
+      <label class="task-check-wrap"><input type="checkbox" data-task-toggle="${t.id}" ${t.done?"checked":""} aria-label="Выполнено"></label>
+      <div class="linfo">
+        <div class="l-head">${t.time?`<span class="l-time">${esc(t.time)}</span>`:""}<span class="pill" style="background:${cat.color}">${cat.label}</span></div>
+        <div class="subj">${hl(t.title)}</div>
+        ${t.note?`<div class="meta">${hl(t.note)}</div>`:""}
+      </div>
+    </div>
+  </div>`;
+}
+function dayHTML(wi,w,di,d){
+  if(st.fDay&&d.day!==st.fDay)return"";
+  const isToday=sameDay(d._dt,new Date());
+  const hasSelf=d.pairs.some(p=>p.lessons.some(isSelf));
+  const dayTasks=tasksForRu(d.date);
+  const taskRows=dayTasks.map(taskCardHTML).join("");
+  const head=`<div class="day-head"><span class="day-name">${d.day}</span>
+    <span class="day-date">${d.date}</span>${isToday?'<span class="today-pill">сегодня</span>':""}</div>`;
+  if(hasSelf&&!filtersOn())
+    return `<section class="day${isToday?" today":""}">${head}<div class="selfstudy"><svg class="ic" aria-hidden="true"><use href="#i-leaf"/></svg> День самостоятельной работы</div>${taskRows}</section>`;
+  let rows="",any=false;
+  d.pairs.forEach((p,pi)=>{
+    const ls=p.lessons.filter(l=>!isSelf(l)).filter(match);
+    if(!ls.length)return;any=true;
+    const cls=markClass(wi,di,pi);
+    const n=(lines(p.pair)[0]||"");
+    // Время стоит на одном и том же месте в каждой карточке — глазу не надо
+    // его искать. Слева оно тоже есть: один интервал, а если у подгрупп время
+    // разное — оба, чтобы номер пары не оставался без времени.
+    const times=[...new Set(ls.map(l=>lessonTime(l,p)).filter(Boolean))];
+    const tm=times.join("<br>");
+    const badge=cls.includes("now")?'<span class="badge-now">сейчас</span>':cls.includes("next")?'<span class="badge-next">ближайшая</span>':"";
+    rows+=`<div class="pair${cls}"><div class="pair-time"><span class="n">${n||""}</span><span class="t">${tm||""}</span>${badge}</div>
+      <div class="stack">${pairBody(ls,x=>lessonTime(x,p))}</div></div>`;
+  });
+  if(!any&&!dayTasks.length)return"";
+  return `<section class="day${isToday?" today":""}">${head}${rows}${taskRows}</section>`;
+}
+
+/* ==== ОТРИСОВКА · список, неделя, месяц ===================================== */
+function renderList(){
+  const[from,to]=currentRange();const multi=st.scope!=="week";let html="",found=false;
+  DATA.weeks.forEach((w,wi)=>{
+    let inner="";
+    w.days.forEach((d,di)=>{if(!d._dt||d._dt<from||d._dt>to)return;inner+=dayHTML(wi,w,di,d);});
+    if(inner){found=true;
+      html+=multi?`<div class="weekhead"><span class="wtag ${w.odd?"odd":"even"}">${w.odd?"нечётная":"чётная"}</span>
+        <span class="day-date">${weekRange(wi)}</span></div>${inner}`:inner;}
+  });
+  return found?html:`<div class="emptystate"><div class="big"><svg class="ic" aria-hidden="true"><use href="#i-cloudsun"/></svg></div>Ничего не нашлось. Попробуй сбросить фильтры.</div>`;
+}
+function renderWeek(){
+  const w=DATA.weeks[st.cur];const now=new Date();
+  const cols=weekColumns(), quiet=quietDays();
+  let html=`<table class="wk"><colgroup><col style="width:64px">${cols.map(di=>quiet.has(di)?`<col style="width:5%">`:"<col>").join("")}</colgroup><tr><th></th>`;
+  cols.forEach(di=>{const d=w.days[di];const t=sameDay(d._dt,now);
+    html+=`<th class="${t?"today":""}">${SHORT[di]}<br><span style="font-weight:600;opacity:.7">${(d.date||"").slice(0,5)}</span></th>`;});
+  html+="</tr>";
+  for(let pi=0;pi<7;pi++){
+    const lbl=w.days[0].pairs[pi].pair||"";const[n,tm]=lbl.split("\n");
+    const rowNow=(M.cur&&M.cur.wi===st.cur&&M.cur.pi===pi)?"now":(M.next&&M.next.wi===st.cur&&M.next.pi===pi)?"next":"";
+    html+=`<tr><td class="tm ${rowNow}"><b>${(n||"").replace(" пара","")}</b>${(tm||"").replace("–","–<br>")}</td>`;
+    cols.forEach(di=>{const d=w.days[di];const p=d.pairs[pi];const t=sameDay(d._dt,now);
+      const cls=markClass(st.cur,di,pi);
+      const selfp=p.lessons.some(isSelf);
+      const ls=selfp?[]:p.lessons.filter(l=>!isSelf(l)).filter(match);
+      // при включённых фильтрах клетка с парами, которые не подошли, гаснет
+      const dim=filtersOn()&&!selfp&&!ls.length&&p.lessons.length?" dim":"";
+      let cell="";
+      if(selfp){cell=`<div class="wk-self"><svg class="ic" aria-hidden="true"><use href="#i-leaf"/></svg></div>`;}
+      else{cell=ls.map(l=>`<div class="mline" title="${esc(l.raw)}">${l.subgroup?`<span class="msg sg${l.subgroup}">${l.subgroup}</span>`:""}<span class="mabbr" style="background:${typeColor(l.tn)}">${abbr(l.subject)}</span>${l.room?`<span class="mroom">${esc(l.room)}</span>`:""}</div>`).join("");}
+      html+=`<td class="c${t?" today":""}${cls}${dim||sgTint(ls)}" data-day="${di}" data-week="${st.cur}">${cell}</td>`;});
+    html+="</tr>";
+  }
+  // Задачи не привязаны к номеру пары, поэтому им — отдельная строка снизу,
+  // а не собственная сетка часов: те же ячейки, тот же клик, что открывает день.
+  html+=`<tr><td class="tm"><b>Задачи</b></td>`;
+  cols.forEach(di=>{const d=w.days[di];const chips=tasksForRu(d.date).map(taskChipHTML).join("");
+    html+=`<td class="c" data-day="${di}" data-week="${st.cur}">${chips}</td>`;});
+  html+="</tr>";
+  return '<div class="hscroll">'+html+"</table></div>";
+}
+// индекс месяца, в котором лежит выбранная неделя (чтобы не открывать пустой август)
+/* Какие дни показывать и какие сжимать — решают данные, а не номер дня.
+   У разных групп самостоятельная работа в разные дни, а пары могут быть
+   и в воскресенье, поэтому ничего нельзя прибивать к четвергу или к Пн-Сб. */
+function dayUsage(){
+  const real=new Set(), any=new Set();
+  DATA.weeks.forEach(w=>w.days.forEach((d,di)=>d.pairs.forEach(p=>
+    p.lessons.forEach(l=>{
+      any.add(di);
+      if(!isSelf(l)&&l.subject)real.add(di);
+    }))));
+  return{real,any};
+}
+/* Дни без обычных пар: самостоятельная работа или вовсе пусто.
+   Показываем узкой колонкой — место занимать им незачем. */
+function quietDays(){
+  const u=dayUsage();
+  return new Set([0,1,2,3,4,5,6].filter(di=>!u.real.has(di)));
+}
+/* Дни, которые вообще есть в расписании. Пустые не рисуем. */
+function weekColumns(){
+  const u=dayUsage();
+  return [0,1,2,3,4,5,6].filter(di=>u.any.has(di));
+}
+
+function monthOfWeek(wi){
+  const d=(DATA.weeks[wi].days.find(x=>x._dt)||{})._dt;
+  if(!d)return 0;
+  const i=MONTHS.findIndex(m=>m.y===d.getFullYear()&&m.m===d.getMonth());
+  return i<0?0:i;
+}
+function renderMonth(){
+  if(!MONTHS.length)return"";
+  st.monthPtr=clamp(st.monthPtr,0,MONTHS.length-1);
+  const mo=MONTHS[st.monthPtr];const now=new Date();
+  const first=new Date(mo.y,mo.m,1);const off=(first.getDay()+6)%7;const dim=new Date(mo.y,mo.m+1,0).getDate();
+  const quiet=quietDays();
+  let html="";
+  const widths=[0,1,2,3,4,5,6].map(i=>quiet.has(i)?".34fr":"1fr").join(" ");
+  html=`<div class="hscroll"><div class="mgrid" style="grid-template-columns:${widths}">`
+    +SHORT.map((s,i)=>`<div class="mh${quiet.has(i)?" quiet":""}">${s}</div>`).join("");
+  for(let i=0;i<off;i++)html+=`<div class="mcell empty${quiet.has(i)?" quiet":""}"></div>`;
+  for(let day=1;day<=dim;day++){
+    const dt=new Date(mo.y,mo.m,day);const ref=DATE_MAP[keyOf(dt)];const t=sameDay(dt,now);
+    const q=quiet.has((dt.getDay()+6)%7)?" quiet":"";
+    if(!ref){
+      // День вне семестра (до 1 сентября / после сессии) — пар там нет,
+      // но своя задача на такую дату всё равно должна быть видна.
+      const outTasks=tasksForRu(dt.toLocaleDateString("ru-RU")).map(taskChipHTML).join("");
+      html+=`<div class="mcell${t?" today":""}${q}"><div class="mn">${day}</div>${outTasks}</div>`;continue;}
+    const d=DATA.weeks[ref.wi].days[ref.di];
+    const self=d.pairs.some(p=>p.lessons.some(isSelf));
+    const items=[];
+    d.pairs.forEach(p=>{
+      p.lessons.filter(l=>!isSelf(l)).filter(match).forEach(l=>
+        items.push({tm:(/(\d{1,2}:\d{2})/.exec(lessonTime(l,p))||[])[1]||"",l}));});
+    const dayTasks=tasksForRu(d.date);
+    const lines=(self
+      ? `<div class="mline selfline"><svg class="ic" aria-hidden="true"><use href="#i-leaf"/></svg></div>`
+      : items.map(({tm,l})=>`<div class="mline" title="${esc(l.subject)}${l.room?" · ауд. "+esc(l.room):""}${l.teacher?" · "+esc(l.teacher):""}">
+          <span class="mtime">${tm}</span>${l.subgroup?`<span class="msg sg${l.subgroup}">${l.subgroup}</span>`:""}<span class="mabbr" style="background:${typeColor(l.tn)}">${abbr(l.subject)}</span>`
+          +`${l.room?`<span class="mroom">${esc(l.room)}</span>`:""}</div>`).join(""))
+      +dayTasks.map(taskChipHTML).join("");
+    const dayLessons=d.pairs.flatMap(p=>p.lessons).filter(match);
+    const dim=filtersOn()&&!dayLessons.filter(l=>!isSelf(l)).length&&!dayTasks.length?" dim":"";
+    html+=`<div class="mcell${t?" today":""}${q}${dim||sgTint(dayLessons)}" data-day="${ref.di}" data-week="${ref.wi}"><div class="mn">${day}</div>${lines}</div>`;
+  }
+  return html+"</div></div>";
+}
+
+/* Селектор в шапке подстраивается под вид: в месяце листаем месяцы, иначе — недели */
+const inMonth=()=>st.view==="month";
+function fillPicker(){
+  const sel=$("week"), tag=$("wtag");
+  if(inMonth()){
+    st.monthPtr=clamp(st.monthPtr,0,MONTHS.length-1);
+    sel.innerHTML=MONTHS.map((m,i)=>`<option value="${i}">${RU_MONTHS[m.m]} ${m.y}</option>`).join("");
+    sel.value=String(st.monthPtr);
+    sel.setAttribute("aria-label","Месяц");
+    tag.hidden=true;
+    const mo=MONTHS[st.monthPtr];
+    $("range-sub").textContent=mo?RU_MONTHS[mo.m]+" "+mo.y:"";
+  }else{
+    const w=DATA.weeks[st.cur];
+    sel.innerHTML=DATA.weeks.map((x,i)=>`<option value="${i}">№${i+1} · ${weekRange(i).replace(/\.20\d\d/g,"")}</option>`).join("");
+    sel.value=String(st.cur);
+    sel.setAttribute("aria-label","Неделя");
+    tag.hidden=false;
+    tag.className="wtag "+(w.odd?"odd":"even");
+    tag.innerHTML=`<span class="wt-full">${w.odd?"нечётная":"чётная"}</span><span class="wt-short">${w.odd?"неч":"чёт"}</span>`;
+    $("range-sub").textContent="Неделя "+(st.cur+1)+" · "+weekRange(st.cur);
+  }
+  sel.style.paddingRight=(document.querySelector(".wsel-end").offsetWidth+14)+"px";
+}
+
+/* Инфо-блок из шапки исходной таблицы: режем сплошной текст на отдельные факты.
+   Адрес выкидываем — студенты и так знают, где учатся. */
+function renderFooter(){
+  const raw=(DATA.notes||[]).filter(Boolean).join(" ").replace(/\s+/g," ").trim();
+  const items=raw
+    .split(/Прим\.\s*\d+:\s*/)
+    .flatMap(part=>part.split(/(?<=\.)\s+(?=[А-ЯЁA-Z])/))
+    // «Нечётная — с …, чётная — с …» это два факта, а не один: разносим по пунктам
+    .flatMap(x=>x.split(/,\s+(?=(?:чётная|нечётная|неделя)\b)/i))
+    .map(x=>x.trim().replace(/\s*\.\s*$/,""))
+    .map(x=>x?x.charAt(0).toUpperCase()+x.slice(1):x)
+    .filter(Boolean)
+    .filter(x=>!/Финуниверситета|Партизанская/i.test(x))
+    // это сайт показывает сам: время уже проставлено в расписании,
+    // а расхождение по дню видно заметкой у самого занятия
+    .filter(x=>!/указано внутри ячейки|исходном PDF|оставлено как в оригинале/i.test(x));
+  // Считаем занятия с заметками — и говорим, где их искать.
+  let noted=0;
+  DATA.weeks.forEach(w=>w.days.forEach(d=>d.pairs.forEach(p=>
+    p.lessons.forEach(l=>{if(l.note)noted++;}))));
+  if(noted)items.push("у отдельных пар есть заметка со значком — нажми на неё, "
+    +"чтобы прочитать целиком (сейчас таких пар: "+noted+")");
+  $("footer").innerHTML=`<div class="f-title">Про это расписание</div>
+    <ul class="f-list">${items.map(t=>`<li>${esc(t)}</li>`).join("")}</ul>`;
+}
+
+/* ==== ОТРИСОВКА · попап дня ================================================= */
+function openDay(wi,di){st.pop=[wi,di];save();renderDay();}
+function closeDay(){st.pop=null;save();renderDay();}
+function renderDay(){
+  if(!st.pop){$("daypop").classList.add("hidden");return;}
+  const [wi,di]=st.pop;
+  const w=DATA.weeks[wi]; if(!w)return;
+  const d=w.days[di]; if(!d)return;
+  const saved=st.fDay; st.fDay="";                 // фильтр по дню внутри попапа не нужен
+  const html=dayHTML(wi,w,di,d);
+  st.fDay=saved;
+  $("daypop-t").textContent=d.day+" · "+(d.date||"");
+  $("daypop-body").innerHTML=html||`<div class="emptystate"><div class="big"><svg class="ic" aria-hidden="true"><use href="#i-cloudsun"/></svg></div>В этот день пар нет.</div>`;
+  $("daypop").classList.remove("hidden");
+}
+
+/* Список открывается на сегодняшнем дне, а не на понедельнике. Прокручиваем только
+   при смене вида или недели: перерисовка по таймеру не должна отбирать прокрутку
+   у того, кто в этот момент читает четверг. */
+let _scrolledTo="";
+function scrollToToday(){
+  const key=navKey(); if(key===_scrolledTo)return; _scrolledTo=key;
+  const el=$("content").querySelector(".day.today");
+  if(el)requestAnimationFrame(()=>el.scrollIntoView({block:"start"}));
+}
+
+/* ==== ОТРИСОВКА · сборка страницы =========================================== */
+function render(){
+  M=nowMarks(); _mark=markKey(M);
+  const c=$("content");
+  if(st.view==="list"){c.innerHTML=renderList();scrollToToday();}
+  else if(st.view==="week"){c.innerHTML=renderWeek();centerToday();}
+  else{c.innerHTML=renderMonth();centerToday();}
+  fillPicker();
+  renderDay();
+  syncUI();
+  $("filternote").hidden=!filtersOn();
+}
+
+/* ==== СИНХРОНИЗАЦИЯ ИНТЕРФЕЙСА ============================================== */
+function syncUI(){
+  document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===st.view));
+  document.querySelectorAll("[data-scope]").forEach(b=>b.classList.toggle("active",b.dataset.scope===st.scope));
+}
+/* Состояние в адресе. Список полей описан один раз: и запись, и чтение
+   ходят по этой таблице, поэтому они не могут разъехаться. */
+const URL_FIELDS=[
+  {key:"v",  get:()=>st.view,                     set:v=>st.view=v,               always:true},
+  {key:"w",  get:()=>st.cur,                      set:v=>st.cur=+v,               always:true},
+  {key:"s",  get:()=>st.scope,                    set:v=>st.scope=v,              always:true},
+  {key:"f",  get:()=>st.from,                     set:v=>st.from=v||""},
+  {key:"t",  get:()=>st.to,                       set:v=>st.to=v||""},
+  {key:"q",  get:()=>st.term,                     set:v=>st.term=v||""},
+  {key:"d",  get:()=>st.fDay,                     set:v=>st.fDay=v||""},
+  {key:"ty", get:()=>st.fType,                    set:v=>st.fType=v||""},
+  {key:"te", get:()=>st.fTeachers.join("~"),      set:v=>st.fTeachers=(v||"").split("~").filter(Boolean)},
+  {key:"m",  get:()=>st.view==="month"?st.monthPtr:"", set:v=>st.monthPtr=+v},
+  {key:"p",  get:()=>st.pop?st.pop.join("."):"",  set:v=>{
+      const a=(v||"").split(".").map(Number);
+      st.pop=a.length===2&&a.every(n=>!isNaN(n))?a:null;}},
+];
+/* Навигационный след: вид, неделя, месяц и открытый день. Только их смена
+   заводит новую запись в истории — иначе кнопка «назад» (и свайп на телефоне)
+   отматывала бы по одной букве поиска, а до самой страницы дело не доходило. */
+function navKey(){return [st.view,st.cur,st.monthPtr,st.pop?st.pop.join("."):""].join("|");}
+let _nav=null;
+function hashWrite(){
+  const p=new URLSearchParams();
+  URL_FIELDS.forEach(f=>{const v=f.get();if(f.always||(v!==""&&v!=null))p.set(f.key,v);});
+  const key=navKey(),push=_nav!==null&&key!==_nav;
+  _nav=key;
+  try{history[push?"pushState":"replaceState"](null,"","#"+p.toString());}
+  catch{location.hash=p.toString();}
+}
+function hashRead(){
+  if(!location.hash||location.hash.length<2)return false;
+  const p=new URLSearchParams(location.hash.slice(1));
+  URL_FIELDS.forEach(f=>{if(p.has(f.key)||!f.always)f.set(p.get(f.key));});
+  return true;
+}
+function flash(btn,msg){const o=btn.textContent;btn.textContent=msg;setTimeout(()=>btn.textContent=o,1600);}
+function save(){localStorage.setItem(KEY,JSON.stringify(st));hashWrite();}
+function load(){try{Object.assign(st,JSON.parse(localStorage.getItem(KEY)||"{}"));}catch{}}
+
+/* ==== ПОДСКАЗКИ ПОИСКА ====================================================== */
+function showSugg(val){const box=$("suggbox");val=(val||"").trim().toLowerCase();
+  if(val.length<2){box.classList.add("hidden");return;}
+  const seen=new Set(),m=[];
+  for(const s of SUGG){if(m.length>=8)break;const low=s.v.toLowerCase();
+    if(low.includes(val)&&!seen.has(low)){seen.add(low);m.push(s);}}
+  if(!m.length){box.classList.add("hidden");return;}
+  box.innerHTML=m.map(s=>`<div class="sugg-item" data-v="${esc(s.v)}"><span class="si" style="background:${s.c}"></span>${hl(s.v)}<span class="sc">${s.kind}</span></div>`).join("");
+  box.classList.remove("hidden");}
+
+/* ==== УПРАВЛЕНИЕ · фильтры, тема, меню ====================================== */
+// подпись кнопки мультифильтра: «Все» / фамилия / «Выбрано N»
+function syncTeacherBtn(){
+  const n=st.fTeachers.length;
+  $("f-teacher-btn").textContent=n===0?"Все":n===1?st.fTeachers[0]:"Выбрано "+n;
+}
+// Только список; галочки и подпись кнопки расставляет restoreInputs — одно место на всё.
+function buildTeacherFilter(list){
+  $("f-teacher-list").innerHTML=list.map(t=>
+    `<label><input type="checkbox" value="${esc(t)}">${esc(t)}</label>`).join("");
+}
+function opts(sel,arr,ph){sel.innerHTML=`<option value="">${ph}</option>`+arr.map(v=>`<option value="${v}">${v}</option>`).join("");}
+/* Справочники, собранные из данных: типы пар, преподаватели, предметы. */
+function collectDictionaries(){
+  const uniq=pick=>[...new Set(DATA.weeks.flatMap(w=>w.days.flatMap(
+    d=>d.pairs.flatMap(p=>p.lessons.map(pick)))))].filter(Boolean);
+  return{
+    types:uniq(l=>l.tn).sort(),
+    teachers:uniq(l=>l.teacher).sort(),
+    subjects:uniq(l=>l.subject),
+  };
+}
+
+/* Наполнение выпадающих списков и подсказок поиска. */
+function fillDictionaries(d){
+  opts($("f-day"),DAYS,"Все дни");
+  opts($("f-type"),d.types,"Все типы");
+  buildTeacherFilter(d.teachers);
+  SUGG=[...d.subjects.map(v=>({v,kind:"предмет",c:"var(--lav)"})),
+        ...d.teachers.map(v=>({v,kind:"препод",c:"var(--blue)"})),
+        ...d.types.map(v=>({v,kind:"тип",c:typeColor(v)}))];
+}
+
+/* Легенда над расписанием. */
+/* Легенда объясняет две разные вещи: цвет плашки — это тип пары,
+   а цвет фона карточки — моя пара это или общая. Без второго ряда фон
+   читается как украшение. Третий ряд — те же цвета, что и у категорий задач. */
+function fillLegend(d){
+  const type=d.types.map(t=>`<span class="lg"><i style="background:${typeColor(t)}"></i>${t}</span>`).join("")
+    +`<span class="lg"><i class="ring"></i>сегодня</span>`
+    +`<span class="lg"><i class="ring now"></i>сейчас / ближайшая</span>`;
+  const fill=`<span class="lg-title">Фон карточки</span>`
+    +`<span class="lg"><i class="fill" style="background:var(--sg2)"></i>моя подгруппа</span>`
+    +`<span class="lg"><i class="fill" style="background:var(--sg0)"></i>пара у всех</span>`;
+  const tasks=`<span class="lg-title">Мои задачи</span>`
+    +Object.values(TASK_CAT).map(c=>`<span class="lg"><i style="background:${c.color}"></i>${c.label}</span>`).join("");
+  $("legend").innerHTML=`<div class="lg-row">${type}</div><div class="lg-row">${fill}</div><div class="lg-row">${tasks}</div>`;
+}
+
+/* Переключение вида и периода. */
+function bindViewButtons(){
+  document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{
+    if(b.dataset.view==="month"&&st.view!=="month")st.monthPtr=monthOfWeek(st.cur);
+    st.view=b.dataset.view;save();render();closeNav();});
+  // scope
+  document.querySelectorAll("[data-scope]").forEach(b=>b.onclick=()=>{st.scope=b.dataset.scope;st.view="list";save();render();closeNav();});
+  $("from").onchange=e=>{st.from=e.target.value;st.scope="custom";st.view="list";save();render();};
+  $("to").onchange=e=>{st.to=e.target.value;st.scope="custom";st.view="list";save();render();};
+}
+
+/* Селектор недели или месяца в шапке. */
+function bindPicker(){
+  const goWeek=i=>{st.cur=clamp(i,0,DATA.weeks.length-1);st.scope="week";save();render();};
+  const goMonth=i=>{st.monthPtr=clamp(i,0,MONTHS.length-1);save();render();};
+  const step=d=>inMonth()?goMonth(st.monthPtr+d):goWeek(st.cur+d);
+  $("week").onchange=e=>inMonth()?goMonth(+e.target.value):goWeek(+e.target.value);
+  $("prev").onclick=()=>step(-1);
+  $("next").onclick=()=>step(1);
+}
+
+/* Поиск и подсказки. */
+function bindSearch(d){
+  $("q").oninput=e=>{st.term=e.target.value.trim().toLowerCase();showSugg(e.target.value);save();render();};
+  $("q").onfocus=e=>{if(e.target.value.trim().length>=2)showSugg(e.target.value);};
+  $("q").onblur=()=>setTimeout(()=>$("suggbox").classList.add("hidden"),150);
+  $("q").addEventListener("keydown",e=>{if(e.key==="Escape")$("suggbox").classList.add("hidden");});
+  $("suggbox").onclick=e=>{const it=e.target.closest(".sugg-item");if(!it)return;
+    st.term=it.dataset.v.toLowerCase();$("q").value=it.dataset.v;$("suggbox").classList.add("hidden");save();render();};
+}
+
+/* Фильтры: день, тип, подгруппа, преподаватели. */
+function bindFilters(d){
+  $("f-day").onchange=e=>{st.fDay=e.target.value;save();render();};
+  $("f-type").onchange=e=>{st.fType=e.target.value;save();render();};
+  $("f-teacher-btn").onclick=()=>{
+    const box=$("f-teacher-list"), open=box.classList.toggle("hidden");
+    $("f-teacher-btn").setAttribute("aria-expanded",String(!open));};
+  $("f-teacher-list").onchange=e=>{
+    const cb=e.target.closest("input");if(!cb)return;
+    st.fTeachers=[...$("f-teacher-list").querySelectorAll("input:checked")].map(x=>x.value);
+    syncTeacherBtn();save();render();};
+  document.addEventListener("click",e=>{
+    if(!e.target.closest(".multi"))$("f-teacher-list").classList.add("hidden");},true);
+  [$("reset"),$("reset-inline")].forEach(b=>b.onclick=resetFilters);
+}
+
+/* Сброс поиска и фильтров — одинаковый для кнопки в меню и плашки над расписанием. */
+function resetFilters(){
+  st.term=st.fDay=st.fType=st.from=st.to="";st.fTeachers=[];st.scope="week";
+  restoreInputs();save();render();
+}
+
+/* Тема: авто, светлая, тёмная. */
+function bindTheme(){
+  function resolveTheme(){return st.theme==="auto"?(mq.matches?"dracula":"cupcake"):st.theme;}
+  function applyTheme(){document.documentElement.setAttribute("data-theme",resolveTheme());
+    const ic=st.theme==="auto"?"auto":st.theme==="dracula"?"moon":"sun";
+    const tt="Тема: "+(st.theme==="auto"?"как в системе":st.theme==="dracula"?"тёмная":"светлая");
+    [$("theme"),$("theme2")].forEach(b=>{if(b){b.innerHTML=`<svg class="ic" aria-hidden="true"><use href="#i-${ic}"/></svg>`;b.title=tt;}});save();}
+  const cycleTheme=()=>{st.theme=st.theme==="auto"?"cupcake":st.theme==="cupcake"?"dracula":"auto";applyTheme();};
+  $("theme").onclick=cycleTheme;if($("theme2"))$("theme2").onclick=cycleTheme;
+  if(mq.addEventListener)mq.addEventListener("change",()=>{if(st.theme==="auto")applyTheme();});
+  applyTheme();
+}
+
+/* Сторона меню и его открытие. */
+function bindSideToggle(){
+  function applySide(){document.body.classList.toggle("side-left",st.side==="left");
+    layoutVars();
+    $("sideseg").querySelectorAll("button").forEach(b=>b.classList.toggle("active",b.dataset.side===st.side));
+    save();}
+  // смена стороны: то же движение, что и по кнопке — уехала, переехала, выехала
+  let _switching=0;
+  $("sideseg").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+    if(b.dataset.side===st.side||_switching)return;
+    const next=b.dataset.side, body=document.body, sb=$("sidebar");
+    _switching=1;
+    body.classList.add("panel-hidden"); applyShift();        // уезжает под центр
+    const show=()=>{body.classList.remove("panel-hidden");applyShift();_switching=0;};
+    setTimeout(()=>{
+      body.classList.add("no-anim");                          // перенос, пока не видно
+      st.side=next; applySide();
+      void sb.offsetWidth;
+      body.classList.remove("no-anim");
+      requestAnimationFrame(show);
+      setTimeout(show,60);
+    },260);});
+  applySide();
+}
+
+/* Копирование ссылки на текущий вид. */
+function bindPNG(){
+  $("png").onclick = () => {
+    if (st.view === "list") { flash($("png"), "Только неделя и месяц"); return; }
+    flash($("png"), "Готовлю…");
+    exportPNG();
+  };
+}
+
+function bindShare(){
+  $("share").onclick=async()=>{const url=location.href;try{
+    if(navigator.share){await navigator.share({title:"Моё расписание",url});}
+    else{await navigator.clipboard.writeText(url);flash($("share"),"✓ Скопировано");}
+  }catch{try{await navigator.clipboard.writeText(url);flash($("share"),"✓ Скопировано");}catch{}}};
+
+  // burger
+  $("burger").onclick=()=>setNav(!document.body.classList.contains("nav-open"));
+}
+
+/* Клики по сетке недели и месяца. */
+function bindGrid(){
+  $("content").addEventListener("click",e=>{
+    const cell=e.target.closest("[data-day]");
+    if(cell){openDay(+cell.dataset.week,+cell.dataset.day);}
+  });
+  $("daypop-x").onclick=closeDay;
+  $("daypop").onclick=e=>{if(e.target===$("daypop"))closeDay();};
+  addEventListener("keydown",e=>{if(e.key==="Escape")closeDay();});
+}
+
+/* ==== ЛИЧНЫЕ ЗАДАЧИ · форма и клики ========================================= */
+let editingTaskId=null;
+function todayIso(){const d=new Date();
+  return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
+function openTaskForm(task){
+  editingTaskId=task?task.id:null;
+  $("taskpop-t").textContent=task?"Изменить задачу":"Новая задача";
+  $("tf-title").value=task?task.title:"";
+  $("tf-date").value=task?task.date:todayIso();
+  $("tf-time").value=task?(task.time||""):"";
+  $("tf-duration").value=task?(task.duration||""):"";
+  $("tf-category").value=task?task.category:"study";
+  $("tf-note").value=task?(task.note||""):"";
+  $("tf-delete").hidden=!task;
+  $("taskpop").classList.remove("hidden");
+  $("tf-title").focus();
+}
+function closeTaskForm(){$("taskpop").classList.add("hidden");}
+function bindTasks(){
+  $("addTask").onclick=()=>openTaskForm(null);
+  $("taskpop-x").onclick=closeTaskForm;
+  $("taskpop").onclick=e=>{if(e.target===$("taskpop"))closeTaskForm();};
+  $("taskForm").onsubmit=e=>{
+    e.preventDefault();
+    const prev=editingTaskId?TASKS.find(t=>t.id===editingTaskId):null;
+    const task={
+      id:editingTaskId||crypto.randomUUID(),
+      title:$("tf-title").value.trim(),
+      date:$("tf-date").value,
+      time:$("tf-time").value,
+      duration:$("tf-duration").value?Number($("tf-duration").value):null,
+      category:$("tf-category").value,
+      note:$("tf-note").value.trim(),
+      done:prev?prev.done:false,
+    };
+    if(!task.title||!task.date)return;
+    upsertTask(task);
+    closeTaskForm();
+  };
+  $("tf-delete").onclick=()=>{
+    if(editingTaskId&&confirm("Удалить эту задачу?")){deleteTask(editingTaskId);closeTaskForm();}
+  };
+  // Делегирование одним слушателем на весь документ: карточки задач есть
+  // и в #content (список), и в #daypop-body (попап дня) — оба места разом.
+  document.addEventListener("click",e=>{
+    const toggle=e.target.closest("[data-task-toggle]");
+    if(toggle){toggleTaskDone(toggle.dataset.taskToggle);return;}
+    const card=e.target.closest(".lesson.task");
+    if(card){const t=TASKS.find(x=>x.id===card.dataset.taskId);if(t)openTaskForm(t);}
+  });
+  addEventListener("keydown",e=>{if(e.key==="Escape")closeTaskForm();});
+}
+
+/* Возврат значений в поля из состояния. */
+function restoreInputs(){
+  $("q").value=st.term;$("f-day").value=st.fDay;$("f-type").value=st.fType;
+  $("from").value=st.from;$("to").value=st.to;
+  document.querySelectorAll("#f-teacher-list input").forEach(cb=>cb.checked=st.fTeachers.includes(cb.value));
+  syncTeacherBtn();
+  renderFooter();
+}
+
+/* Кнопка «назад» возвращает к прошлому виду, неделе или дню, а не уводит с сайта. */
+function bindHistory(){
+  addEventListener("popstate",()=>{
+    if(!hashRead())return;
+    _nav=navKey();                 // вернулись на готовую запись, новую заводить не надо
+    restoreInputs();
+    render();
+  });
+}
+
+/* Оркестратор: собирает справочники и раздаёт обработчики по местам. */
+function initControls(){
+  const d=collectDictionaries();
+  fillDictionaries(d);
+  fillLegend(d);
+  bindViewButtons();
+  bindPicker();
+  bindSearch(d);
+  bindFilters(d);
+  bindTheme();
+  bindSideToggle();
+  bindShare();
+  bindPNG();
+  bindGrid();
+  bindTasks();
+  bindHistory();
+  bindNavDismiss();
+  restoreInputs();
+}
+function closeNav(){setNav(false);}
+
+/* На телефоне открытая панель занимает почти весь экран, и лист остаётся узкой
+   полоской сбоку — там клик мимо меню закрывает его, как ждут от шторки.
+   На широких окнах панель ничего не накрывает и закрывается только кнопкой. */
+const PHONE=matchMedia("(max-width:640px)");
+function bindNavDismiss(){
+  $("below").addEventListener("click",e=>{
+    if(!PHONE.matches||!document.body.classList.contains("nav-open"))return;
+    e.preventDefault();e.stopPropagation();   // первый клик только закрывает меню
+    closeNav();
+  },true);
+}
+
+/* ==== ПОГОДА ================================================================ */
+function wcode(c){const m={0:["sun","ясно"],1:["cloudsun","в основном ясно"],2:["cloudsun","переменная облачность"],
+  3:["cloud","пасмурно"],45:["fog","туман"],48:["fog","туман"],
+  51:["rain","морось"],53:["rain","морось"],55:["rain","морось"],
+  61:["rain","дождь"],63:["rain","дождь"],65:["rain","сильный дождь"],
+  71:["snow","снег"],73:["snow","снег"],75:["snow","сильный снег"],
+  80:["rain","ливень"],81:["rain","ливень"],82:["storm","ливень"],
+  85:["snow","снег"],86:["snow","снег"],95:["storm","гроза"],96:["storm","гроза"],99:["storm","гроза"]};
+  return m[c]?{icon:m[c][0],text:m[c][1]}:{icon:"thermo",text:""};}
+const CODE_RAIN=[51,53,55,56,57,61,63,65,66,67,80,81,82];
+const CODE_SNOW=[71,73,75,77,85,86];
+const CODE_STORM=[95,96,99];
+const CODE_FOG=[45,48];
+/* Совет — чистая функция от параметров: ощущаемая температура, код погоды,
+   ветер (км/ч), влажность (%), вероятность осадков (%), UV, день/ночь. */
+function advice({feels,code,wind=0,humidity=null,precip=null,uv=null,isDay=1}){
+  const out=[];
+  // слой одежды — по ощущаемой температуре
+  if(feels<=-20)out.push("экстремальный холод: пуховик, шапка, перчатки, шарф");
+  else if(feels<=-10)out.push("сильный мороз: пуховик, шапка, перчатки");
+  else if(feels<=-2)out.push("мороз: зимняя куртка и шапка");
+  else if(feels<5)out.push("холодно: тёплая куртка");
+  else if(feels<11)out.push("прохладно: пальто или куртка");
+  else if(feels<17)out.push("свежо: ветровка или тёплая кофта");
+  else if(feels<24)out.push("комфортно: лёгкая кофта");
+  else if(feels<29)out.push("тепло: футболка");
+  else out.push("жарко: light-одежда и вода с собой");
+  // осадки
+  if(CODE_STORM.includes(code))out.push("гроза: лучше переждать");
+  else if(CODE_SNOW.includes(code))out.push("снег: непромокаемая обувь");
+  else if(CODE_RAIN.includes(code))out.push("дождь: зонт");
+  else if(precip!=null&&precip>=50)out.push("может пойти дождь: зонт на всякий");
+  // ветер
+  if(wind>=35)out.push("сильный ветер: зонт выворачивает, лучше капюшон");
+  else if(wind>=20)out.push("ветрено");
+  // влажность работает по-разному в холод и в жару
+  if(humidity!=null){
+    if(humidity>=85&&feels<8)out.push("сыро: мёрзнешь быстрее, чем по градуснику");
+    else if(humidity>=70&&feels>=25)out.push("душно");
+    else if(humidity<=25&&feels<=0)out.push("сухой мороз: щиплет лицо");
+  }
+  // солнце и видимость
+  if(isDay&&uv!=null&&uv>=6)out.push("солнце активное: крем");
+  if(CODE_FOG.includes(code))out.push("туман: видно плохо");
+  const text=out.slice(0,3).join(" · ");
+  return text?text.charAt(0).toUpperCase()+text.slice(1):"";}
+function weather(){
+  const box=$("weather");
+  const go=async(lat,lon,place)=>{try{
+    const u=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+      +`&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day`
+      +`&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max&timezone=auto`;
+    const j=await(await fetch(u)).json();const c=j.current;const info=wcode(c.weather_code);
+    box.innerHTML=`<div class="w-emoji"><svg class="ic" aria-hidden="true"><use href="#i-${info.icon}"/></svg></div><div>
+      <div class="w-temp">${Math.round(c.temperature_2m)}°</div>
+      <div class="w-sub">${place} · ${info.text} · ${Math.round(j.daily.temperature_2m_min[0])}…${Math.round(j.daily.temperature_2m_max[0])}°</div>
+      <div class="w-advice">${advice({
+        feels:c.apparent_temperature??c.temperature_2m,
+        code:c.weather_code,
+        wind:c.wind_speed_10m,
+        humidity:c.relative_humidity_2m,
+        precip:j.daily.precipitation_probability_max?.[0],
+        uv:j.daily.uv_index_max?.[0],
+        isDay:c.is_day})}</div></div>`;
+  }catch{box.innerHTML='<div class="w-sub">погода недоступна</div>';}};
+  go(54.9846,73.3729,"Омск");
+}
+
+/* ==== РАСКЛАДКА · панель и лист ============================================= */
+// Ширины берём из стилей: держать их в двух местах — верный способ забыть
+// поменять в одном. Палитра и размеры живут только в :root.
+const cssPx=(name,fallback)=>{
+  const v=getComputedStyle(document.documentElement).getPropertyValue(name);
+  const n=parseFloat(v);
+  return isNaN(n)?fallback:n;
+};
+const MENU_W=cssPx("--panelw",266), CONTENT_MAX=cssPx("--maxw",1040);
+/* Одна модель на все ширины:
+     контент шириной min(1040, окно) стоит по центру окна;
+     боковое поле = (окно - контент) / 2;
+     поле >= меню  -> меню просто стоит в поле, ничего не двигается (body.wide);
+     поле <  меню  -> край окна поджимает меню, меню поджимает контент ровно на нехватку.
+   На скролл ничего не считаем — липкость меню делает браузер. */
+function layoutVars(){
+  const root=document.documentElement, W=root.clientWidth;
+  const cw=Math.min(CONTENT_MAX,W);
+  const gutter=(W-cw)/2;                       // свободное поле сбоку
+  const wide=gutter>=MENU_W;
+  document.body.classList.toggle("wide",wide);
+  if(wide){
+    root.style.setProperty("--gapend",Math.round(gutter-MENU_W)+"px");
+    root.style.setProperty("--bw",Math.round(W-gutter)+"px");
+    root.style.setProperty("--cl",Math.round(st.side==="left"?0:gutter)+"px");
+    root.style.setProperty("--gutter",Math.round(gutter)+"px");
+  }
+  applyShift();
+}
+/* Панель и лист разъезжаются навстречу и в сумме дают ширину панели:
+     панель проходит  gutter        (из-под листа до края окна),
+     лист уступает    266 - gutter  (ровно нехватку места).
+   На широком окне панель стоит своей колонкой: лист не двигается,
+   а спрятанное положение панели — задвинутое под край контента. */
+function applyShift(){
+  const root=document.documentElement, body=document.body, W=root.clientWidth;
+  const wide=body.classList.contains("wide");
+  const gutter=(W-Math.min(CONTENT_MAX,W))/2;
+  const dir=st.side==="left"?1:-1;
+  // panel-hidden ставится только на время переезда на другую сторону
+  const open=!body.classList.contains("panel-hidden")&&(wide||body.classList.contains("nav-open"));
+  root.style.setProperty("--panel-shift",(open?0:dir*Math.round(wide?MENU_W:gutter))+"px");
+  root.style.setProperty("--shift",(open&&!wide?dir*Math.round(MENU_W-gutter):0)+"px");
+}
+function setNav(open){document.body.classList.toggle("nav-open",open);applyShift();}
+// ResizeObserver надёжнее события resize и ловит плавное перетаскивание окна;
+// высоту баннера тоже меряем только здесь — на скролле ничего не двигаем
+const _ro=new ResizeObserver(layoutVars);
+_ro.observe(document.documentElement);
+_ro.observe(document.querySelector(".ribbon"));
+
+/* ==== ЭКСПОРТ В PNG ================================================== */
+
+/* Картинка рисуется на canvas, а не снимается со страницы: так не нужны
+   внешние библиотеки, а в файл попадает ровно то, что нужно — заголовок,
+   период, сетка и легенда с пояснением про фон. */
+
+const TITLE_H = 62, TITLE_H_FILTERED = 84;   // блок заголовка с подписью про фильтры и без
+const PNG = {
+  pad: 28, gap: 6, radius: 10,
+  head: 90,                    // колонка с номером пары
+  col: 168, colNarrow: 62,     // ширина колонки дня
+  line: 20, cellPad: 8,
+  scale: 2,                    // ретина
+  sans: '600 13px "Manrope", "Segoe UI", system-ui, sans-serif',
+};
+
+/* Цвета берём из палитры страницы: экспорт совпадает с тем, что видно. */
+function pngPalette(){
+  const cs = getComputedStyle(document.documentElement);
+  const v = n => cs.getPropertyValue(n).trim();
+  const mix = (color, pct) => {
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:absolute;visibility:hidden;background:" +
+      `color-mix(in srgb, ${color} ${pct}, ${v("--panel")})`;
+    document.body.appendChild(probe);
+    const out = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return out;
+  };
+  const strength = v("--sg-strength") || "38%";
+  return {
+    ink: v("--ink"), muted: v("--muted"), line: v("--line"),
+    panel: v("--panel"), bg: v("--app-bg"), onAccent: v("--on-accent"),
+    sg: {
+      "1": mix(v("--sg1"), strength),
+      "2": mix(v("--sg2"), strength),
+      "0": mix(v("--sg0"), v("--sg0-strength") || strength),
+    },
+    sgPure: { "1": v("--sg1"), "2": v("--sg2"), "0": v("--sg0") },
+    type: t => {
+      const map = { "Лекция": "--blue", "Практика": "--mint", "Семинар": "--lav",
+                    "Лабораторная": "--gold", "Зачёт": "--pink", "Экзамен": "--pink" };
+      return v(map[t] || "--neutral-chip");
+    },
+  };
+}
+
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+}
+
+/* Обрезает текст по ширине, добавляя многоточие. */
+function fitText(ctx, text, maxWidth){
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let cut = text;
+  while (cut.length > 1 && ctx.measureText(cut + "…").width > maxWidth) cut = cut.slice(0, -1);
+  return cut + "…";
+}
+
+/* Кружок с номером подгруппы — тот же знак, что и на сайте. */
+function drawSubDot(ctx, x, y, sub, pal){
+  const r = 6.5;
+  ctx.fillStyle = pal.sgPure[sub] || pal.sgPure["0"];
+  ctx.beginPath();
+  ctx.arc(x + r, y + 8.5, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = '800 9px "Manrope", "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = pal.onAccent;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(sub, x + r, y + 9);
+  ctx.textAlign = "left";
+  return r * 2;
+}
+
+function drawChip(ctx, x, y, text, bg, fg, pal){
+  ctx.font = '800 11px "Manrope", "Segoe UI", system-ui, sans-serif';
+  const w = Math.max(34, ctx.measureText(text).width + 14);
+  ctx.fillStyle = bg;
+  roundRect(ctx, x, y, w, 17, 8.5);
+  ctx.fill();
+  ctx.fillStyle = fg || pal.onAccent;
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + 7, y + 9);
+  return w;
+}
+
+/* Строки одной клетки: время, сокращение предмета, аудитория. */
+function cellLines(pair){
+  const real = pair.lessons.filter(l => !isSelf(l) && l.subject).filter(match);
+  if (!real.length && pair.lessons.some(isSelf)) return [{ self: true }];
+  return real.map(l => ({
+    time: (/(\d{1,2}:\d{2})/.exec(lessonTime(l, pair)) || [])[1] || "",
+    abbr: abbr(l.subject), room: l.room || "", type: l.tn, sub: l.subgroup,
+  }));
+}
+
+function drawCellLines(ctx, lines, x, y, width, pal){
+  lines.forEach((ln, i) => {
+    const top = y + i * PNG.line;
+    if (ln.self){
+      ctx.font = PNG.sans;
+      ctx.fillStyle = pal.muted;
+      ctx.textBaseline = "middle";
+      ctx.fillText("самост.", x, top + 9);
+      return;
+    }
+    let cx = x;
+    if (ln.time){
+      ctx.font = '700 10px "Manrope", "Segoe UI", system-ui, sans-serif';
+      ctx.fillStyle = pal.ink;
+      ctx.textBaseline = "middle";
+      ctx.fillText(ln.time, cx, top + 9);
+      cx += 30;
+    }
+    if (ln.sub) cx += drawSubDot(ctx, cx, top, ln.sub, pal) + 4;
+    cx += drawChip(ctx, cx, top, ln.abbr, pal.type(ln.type), null, pal) + 5;
+    if (ln.room){
+      ctx.font = '700 10px "Manrope", "Segoe UI", system-ui, sans-serif';
+      ctx.fillStyle = pal.muted;
+      ctx.fillText(fitText(ctx, ln.room, x + width - cx), cx, top + 9);
+    }
+  });
+}
+
+/* Заливка клетки по подгруппам — тот же смысл, что на сайте. */
+function cellFill(ctx, pair, x, y, w, h, pal){
+  const real = pair.lessons.filter(l => !isSelf(l) && l.subject).filter(match);
+  if (!real.length) return pal.panel;
+  const subs = [...new Set(real.map(l => l.subgroup).filter(Boolean))];
+  if (!subs.length) return pal.sg["0"];
+  if (subs.length === 1) return pal.sg[subs[0]];
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  const first = real.find(l => l.subgroup).subgroup;
+  grad.addColorStop(0, pal.sg[first]);
+  grad.addColorStop(0.24, pal.sg[first]);
+  grad.addColorStop(0.76, pal.sg[first === "1" ? "2" : "1"]);
+  grad.addColorStop(1, pal.sg[first === "1" ? "2" : "1"]);
+  return grad;
+}
+
+function drawTitle(ctx, x, y, width, title, subtitle, pal){
+  ctx.textBaseline = "alphabetic";
+  ctx.font = '600 26px Georgia, "Times New Roman", serif';
+  ctx.fillStyle = pal.ink;
+  ctx.fillText(title, x, y + 24);
+  ctx.font = PNG.sans;
+  ctx.fillStyle = pal.muted;
+  ctx.fillText(subtitle, x, y + 46);
+  const filters = filterSummary();
+  if (filters){
+    ctx.font = '700 13px "Manrope", "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = pal.ink;
+    ctx.fillText("Показаны не все пары: " + filters, x, y + 68);
+  }
+  return filters ? TITLE_H_FILTERED : TITLE_H;
+}
+
+/* Легенда: тип пары — цвет плашки, подгруппа — цвет фона. */
+function drawLegend(ctx, x, y, pal, types){
+  ctx.textBaseline = "middle";
+  let cx = x, cy = y;
+  ctx.font = PNG.sans;
+  types.forEach(t => {
+    ctx.fillStyle = pal.type(t);
+    ctx.beginPath(); ctx.arc(cx + 6, cy + 8, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = pal.muted;
+    ctx.fillText(t, cx + 18, cy + 8);
+    cx += 18 + ctx.measureText(t).width + 18;
+  });
+
+  cy += 26; cx = x;
+  ctx.font = '700 11px "Manrope", "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = pal.muted;
+  ctx.fillText("ФОН КАРТОЧКИ", cx, cy + 8);
+  cx += ctx.measureText("ФОН КАРТОЧКИ").width + 16;
+
+  const swatch = (fill, label) => {
+    ctx.fillStyle = fill;
+    roundRect(ctx, cx, cy + 2, 18, 12, 4); ctx.fill();
+    ctx.strokeStyle = pal.line; ctx.lineWidth = 1; ctx.stroke();
+    ctx.font = PNG.sans; ctx.fillStyle = pal.muted;
+    ctx.fillText(label, cx + 24, cy + 8);
+    cx += 24 + ctx.measureText(label).width + 18;
+  };
+  swatch(pal.sg["1"], "1-я подгруппа");
+  swatch(pal.sg["2"], "2-я подгруппа");
+  const both = ctx.createLinearGradient(cx, 0, cx + 18, 0);
+  both.addColorStop(0, pal.sg["1"]); both.addColorStop(0.5, pal.sg["1"]);
+  both.addColorStop(0.5, pal.sg["2"]); both.addColorStop(1, pal.sg["2"]);
+  swatch(both, "обе подгруппы");
+  swatch(pal.sg["0"], "пара у всех");
+  return 52;
+}
+
+function newCanvas(width, height){
+  const c = document.createElement("canvas");
+  c.width = width * PNG.scale;
+  c.height = height * PNG.scale;
+  const ctx = c.getContext("2d");
+  ctx.scale(PNG.scale, PNG.scale);
+  return { canvas: c, ctx };
+}
+
+/* ---- неделя ---- */
+function drawWeekPNG(){
+  const pal = pngPalette();
+  const w = DATA.weeks[st.cur];
+  const cols = weekColumns(), quiet = quietDays();
+  const width = PNG.pad * 2 + PNG.head +
+    cols.reduce((s, di) => s + (quiet.has(di) ? PNG.colNarrow : PNG.col) + PNG.gap, 0);
+
+  const rows = [];
+  for (let pi = 0; pi < 7; pi++){
+    const lines = cols.map(di => cellLines(w.days[di].pairs[pi]));
+    const max = Math.max(1, ...lines.map(l => l.length));
+    rows.push({ pi, lines, height: Math.max(46, max * PNG.line + PNG.cellPad * 2) });
+  }
+
+  const titleH = filtersOn() ? TITLE_H_FILTERED : TITLE_H;
+  const gridTop = PNG.pad + titleH + 30;
+  const gridHeight = rows.reduce((s, r) => s + r.height + PNG.gap, 0);
+  const height = gridTop + gridHeight + 16 + 52 + PNG.pad;
+
+  const { canvas, ctx } = newCanvas(width, height);
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, width, height);
+
+  drawTitle(ctx, PNG.pad, PNG.pad, width,
+    (DATA.title || "").split("(")[0].trim() || "Расписание",
+    "Неделя " + (st.cur + 1) + " · " + weekRange(st.cur) + " · " + (w.odd ? "нечётная" : "чётная"), pal);
+
+  // шапка с днями
+  let x = PNG.pad + PNG.head;
+  ctx.textAlign = "center";
+  cols.forEach(di => {
+    const cw = quiet.has(di) ? PNG.colNarrow : PNG.col;
+    ctx.font = PNG.sans; ctx.fillStyle = pal.muted; ctx.textBaseline = "middle";
+    ctx.fillText(SHORT[di], x + cw / 2, gridTop - 20);
+    ctx.font = '600 11px "Manrope", "Segoe UI", system-ui, sans-serif';
+    ctx.fillText((w.days[di].date || "").slice(0, 5), x + cw / 2, gridTop - 6);
+    x += cw + PNG.gap;
+  });
+  ctx.textAlign = "left";
+
+  let y = gridTop;
+  rows.forEach(row => {
+    const label = (w.days[cols[0]].pairs[row.pi].pair || "").split(PAIR_NL);
+    ctx.textAlign = "center";
+    ctx.font = '700 13px "Manrope", "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = pal.ink; ctx.textBaseline = "middle";
+    ctx.fillText((label[0] || "").replace(" пара", ""), PNG.pad + PNG.head / 2, y + 16);
+    ctx.font = '600 11px "Manrope", "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = pal.muted;
+    ctx.fillText(label[1] || "", PNG.pad + PNG.head / 2, y + 32);
+    ctx.textAlign = "left";
+
+    let cx = PNG.pad + PNG.head;
+    cols.forEach((di, ci) => {
+      const cw = quiet.has(di) ? PNG.colNarrow : PNG.col;
+      const pair = w.days[di].pairs[row.pi];
+      ctx.fillStyle = cellFill(ctx, pair, cx, y, cw, row.height, pal);
+      roundRect(ctx, cx, y, cw, row.height, PNG.radius); ctx.fill();
+      ctx.strokeStyle = pal.line; ctx.lineWidth = 1; ctx.stroke();
+      drawCellLines(ctx, row.lines[ci], cx + PNG.cellPad, y + PNG.cellPad, cw - PNG.cellPad * 2, pal);
+      cx += cw + PNG.gap;
+    });
+    y += row.height + PNG.gap;
+  });
+
+  const types = collectDictionaries().types;
+  drawLegend(ctx, PNG.pad, y + 12, pal, types);
+  return canvas;
+}
+
+/* ---- месяц ---- */
+function drawMonthPNG(){
+  const pal = pngPalette();
+  const mo = MONTHS[st.monthPtr];
+  const quiet = quietDays();
+  const widths = [0,1,2,3,4,5,6].map(i => quiet.has(i) ? PNG.colNarrow : PNG.col);
+  const width = PNG.pad * 2 + widths.reduce((s, w) => s + w + PNG.gap, 0);
+
+  const first = new Date(mo.y, mo.m, 1);
+  const off = (first.getDay() + 6) % 7;
+  const dim = new Date(mo.y, mo.m + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < off; i++) cells.push(null);
+  for (let d = 1; d <= dim; d++){
+    const dt = new Date(mo.y, mo.m, d);
+    const ref = DATE_MAP[keyOf(dt)];
+    const day = ref ? DATA.weeks[ref.wi].days[ref.di] : null;
+    // день самостоятельной работы — одна строка на клетку, а не по строке на пару
+    let lines = day ? day.pairs.flatMap(p => cellLines(p)).filter(Boolean) : [];
+    if (lines.some(l => l.self)) lines = [{ self: true }];
+    cells.push({ d, day, lines });
+  }
+  while (cells.length % 7) cells.push(null);
+
+  const rowsCount = cells.length / 7;
+  const rowHeights = [];
+  for (let r = 0; r < rowsCount; r++){
+    const slice = cells.slice(r * 7, r * 7 + 7);
+    const max = Math.max(1, ...slice.map(c => (c ? c.lines.length : 0)));
+    rowHeights.push(Math.max(58, 20 + max * PNG.line + PNG.cellPad));
+  }
+
+  const titleH = filtersOn() ? TITLE_H_FILTERED : TITLE_H;
+  const gridTop = PNG.pad + titleH + 24;
+  const height = gridTop + rowHeights.reduce((s, h) => s + h + PNG.gap, 0) + 16 + 52 + PNG.pad;
+  const { canvas, ctx } = newCanvas(width, height);
+  ctx.fillStyle = pal.bg; ctx.fillRect(0, 0, width, height);
+
+  drawTitle(ctx, PNG.pad, PNG.pad, width,
+    (DATA.title || "").split("(")[0].trim() || "Расписание",
+    RU_MONTHS[mo.m] + " " + mo.y, pal);
+
+  let x = PNG.pad;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = '700 12px "Manrope", "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = pal.muted;
+  SHORT.forEach((s, i) => { ctx.fillText(s, x + widths[i] / 2, gridTop - 10); x += widths[i] + PNG.gap; });
+  ctx.textAlign = "left";
+
+  let y = gridTop;
+  for (let r = 0; r < rowsCount; r++){
+    let cx = PNG.pad;
+    for (let c = 0; c < 7; c++){
+      const cell = cells[r * 7 + c], cw = widths[c], ch = rowHeights[r];
+      if (cell){
+        const pairs = cell.day ? cell.day.pairs : [];
+        const all = { lessons: pairs.flatMap(p => p.lessons) };
+        ctx.fillStyle = cellFill(ctx, all, cx, y, cw, ch, pal);
+        roundRect(ctx, cx, y, cw, ch, PNG.radius); ctx.fill();
+        ctx.strokeStyle = pal.line; ctx.lineWidth = 1; ctx.stroke();
+        ctx.font = '700 11px "Manrope", "Segoe UI", system-ui, sans-serif';
+        ctx.fillStyle = pal.muted; ctx.textBaseline = "middle";
+        ctx.fillText(String(cell.d), cx + PNG.cellPad, y + 12);
+        drawCellLines(ctx, cell.lines, cx + PNG.cellPad, y + 20, cw - PNG.cellPad * 2, pal);
+      }
+      cx += cw + PNG.gap;
+    }
+    y += rowHeights[r] + PNG.gap;
+  }
+
+  drawLegend(ctx, PNG.pad, y + 12, pal, collectDictionaries().types);
+  return canvas;
+}
+
+/* Оркестратор: выбирает вид, рисует и отдаёт файл. */
+function exportPNG(){
+  const month = inMonth();
+  const canvas = month ? drawMonthPNG() : drawWeekPNG();
+  const w = DATA.weeks[st.cur];
+  const name = month
+    ? "Расписание " + RU_MONTHS[MONTHS[st.monthPtr].m] + " " + MONTHS[st.monthPtr].y
+    : "Расписание неделя " + (st.cur + 1) + " " + weekRange(st.cur).replace(/\s/g, "");
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name + ".png";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, "image/png");
+}
+
+/* ==== СТАРТ ================================================================= */
+
+/* Данные могут не приехать или оказаться битыми. Сайт от этого не ломается:
+   каркас остаётся на месте, а в области расписания показывается заглушка. */
+function schedulePlaceholder(text){
+  const c=$("content");
+  if(c)c.innerHTML='<div class="emptystate"><div class="big">'
+    +'<svg class="ic" aria-hidden="true"><use href="#i-cloudsun"/></svg></div>'+text+'</div>';
+  const legend=$("legend"); if(legend)legend.innerHTML="";
+  const footer=$("footer"); if(footer)footer.innerHTML="";
+  document.documentElement.classList.remove("preload");
+}
+function dataLooksValid(d){
+  return !!d && Array.isArray(d.weeks) && d.weeks.length>0
+    && d.weeks.every(w=>Array.isArray(w.days) && w.days.length>0
+      && w.days.every(day=>Array.isArray(day.pairs)));
+}
+
+async function boot(){
+  try{
+    const r=await fetch("data.json",{cache:"no-cache"});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    DATA=await r.json();
+  }catch(e){
+    console.error("Не удалось загрузить data.json:",e);
+    schedulePlaceholder("Здесь скоро появится расписание.");
+    return;
+  }
+  if(!dataLooksValid(DATA)){
+    schedulePlaceholder("Здесь скоро появится расписание.");
+    return;
+  }
+  try{
+    load();
+    loadTasks();
+    prep();
+    const shared=hashRead();
+    if(!["week","m1","custom"].includes(st.scope))st.scope="week";
+    if(st.view==="month"&&!/[#&]m=/.test(location.hash))st.monthPtr=monthOfWeek(st.cur);
+    if(!(st.cur>=0&&st.cur<DATA.weeks.length))st.cur=todayWeek();
+    if(!shared&&!localStorage.getItem(KEY))st.cur=todayWeek();
+    initControls();
+    render();
+  }catch(e){
+    console.error("Ошибка при сборке страницы:",e);
+    schedulePlaceholder("Здесь скоро появится расписание.");
+    return;
+  }
+  layoutVars();
+  weather();
+  // перерисовываем только когда сменилась текущая или ближайшая пара
+  setInterval(()=>{if(markKey(nowMarks())!==_mark)render();},30000);
+  // анимации включаем, когда всё встало на места; таймер — страховка,
+  // если вкладка в фоне и кадры не выдаются
+  const dropPreload=()=>document.documentElement.classList.remove("preload");
+  requestAnimationFrame(()=>requestAnimationFrame(dropPreload));
+  setTimeout(dropPreload,120);
+}
+// boot() запускается сразу, только если пароль уже введён в этой вкладке
+// (sessionStorage) — иначе его вызывает обработчик формы после верного пароля.
+if (sessionStorage.getItem('schedule.unlocked') === '1') { hideGate(); boot(); }
+</script>
+</body>
+</html>
