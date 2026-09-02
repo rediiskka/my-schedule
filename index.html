@@ -621,41 +621,45 @@ async function sha256Hex(text){
 }
 function hideGate(){ document.getElementById('gate').hidden = true; }
 
-/* ==== ШИФРОВАНИЕ ЗАДАЧ =======================================================
-   Пароль открывает и вход, и сами задачи: из него выводится ключ AES-GCM,
-   которым зашифрован tasks.json в репозитории. Файл публичный, но без пароля
-   это набор одинаковых блоков — ни времени, ни числа дел из него не достать.
+/* ==== ЛИЧНЫЕ ЗАПИСИ · ключ и чтение ==========================================
+   Расписание группы публичное. Личное лежит рядом зашифрованным: my-data.json —
+   фрагменты по одной записи, index.json — зашифрованный индекс с датами и
+   позициями.
 
-   Соль лежит в самом файле, а не в браузере: иначе на втором устройстве
-   вывелся бы другой ключ и файл не открылся бы. Отсюда порядок: пароль ->
-   тянем файл -> берём соль -> выводим ключ -> расшифровываем фрагменты. */
+   Индекс читается первым: по нему видно, какие фрагменты нужны показанному
+   отрезку, и расшифровываются только они. Наружу при этом не торчит ни одной
+   даты — индекс сам зашифрован.
+
+   Соль лежит в index.json, а не в браузере: иначе на втором устройстве из того
+   же пароля вывелся бы другой ключ. Порядок: пароль -> индекс -> соль -> ключ
+   -> нужные фрагменты. */
+const INDEX_URL = 'index.json';
+const MINE_URL = 'my-data.json';
 const SESSION_KEY = 'schedule.key';
 const SESSION_SALT = 'schedule.salt';
 let cryptoKey = null;
-let TASKS_FILE = null;
+let MY_INDEX = null;      // [{d:"ДД.ММ.ГГГГ", p:"3", i:12}, ...]
+let MY_ITEMS = null;      // сырые фрагменты, расшифровываем по требованию
+const MY_CACHE = new Map();
 
 const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
 const unb64 = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
 
-// Нет файла — просто нет задач: сайт остаётся обычным расписанием.
-// Кэш обходим двумя способами сразу, и оба нужны. cache:'reload' снимает кэш
-// браузера, а метка в адресе — кэш GitHub Pages: голый tasks.json лежит там
-// готовым ответом, и после коммита сайт ещё несколько минут отдавал бы старые
-// задачи. Файл маленький, качать его заново каждый раз ничего не стоит.
-async function fetchTasksFile(){
+// Кэш обходим двумя способами сразу, и оба нужны: cache:'reload' снимает кэш
+// браузера, метка в адресе — кэш GitHub Pages, где голый файл лежит готовым
+// ответом и после коммита ещё несколько минут отдавал бы вчерашнее.
+async function fetchJSON(url){
   try{
-    const r = await fetch(`${TASKS_URL}?v=${Date.now()}`, { cache: 'reload' });
-    if (!r.ok) return null;
-    const data = await r.json();
-    return data && data.salt && Array.isArray(data.items) ? data : null;
+    const r = await fetch(`${url}?v=${Date.now()}`, { cache: 'reload' });
+    return r.ok ? await r.json() : null;
   }catch(e){
-    console.error('Файл задач не загрузился:', e);
+    console.warn('Не загрузилось:', url, e);
     return null;
   }
 }
 
-// 150000 итераций: для входа это незаметные доли секунды, а перебор пароля по
-// скачанному файлу упирается в тот же множитель.
+// 150000 итераций: для входа это доли секунды, а перебор пароля по скачанному
+// файлу упирается в тот же множитель.
 async function deriveKey(password, salt){
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
@@ -664,7 +668,7 @@ async function deriveKey(password, salt){
 }
 
 // Фрагмент — base64 от вектора и шифротекста подряд. Внутри блок постоянной
-// длины: два байта настоящего размера, дальше сам json и добивка нулями.
+// длины: два байта настоящего размера, дальше json и добивка нулями.
 async function decryptFragment(fragment){
   const blob = unb64(fragment);
   const plain = new Uint8Array(await crypto.subtle.decrypt(
@@ -674,30 +678,54 @@ async function decryptFragment(fragment){
   return JSON.parse(new TextDecoder().decode(plain.slice(2, 2 + size)));
 }
 
-// Ключ переживает перезагрузку страницы, но не закрытие вкладки. Кладём именно
-// ключ, а не пароль: пароль после входа нигде не остаётся, и перевыводить его
-// через PBKDF2 на каждый F5 не приходится.
+// Индекс шифруется одним куском, без набивки: он не запись, и его длина ничего
+// о содержимом не говорит.
+async function decryptIndex(blob){
+  const raw = unb64(blob);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, cryptoKey, raw.slice(12));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+// Ключ переживает перезагрузку, но не закрытие вкладки. Кладём ключ, а не
+// пароль: пароль после входа нигде не остаётся.
 async function rememberKey(salt){
   sessionStorage.setItem(SESSION_KEY, b64(await crypto.subtle.exportKey('raw', cryptoKey)));
-  sessionStorage.setItem(SESSION_SALT, b64(salt));
+  sessionStorage.setItem(SESSION_SALT, salt);
 }
 async function restoreKey(){
   const raw = sessionStorage.getItem(SESSION_KEY);
   if (!raw) return false;
   cryptoKey = await crypto.subtle.importKey('raw', unb64(raw), 'AES-GCM', true, ['encrypt', 'decrypt']);
-  TASKS_FILE = await fetchTasksFile();
-  // Файл перевыпустили с другой солью — старый ключ к нему уже не подойдёт.
-  if (TASKS_FILE && TASKS_FILE.salt !== sessionStorage.getItem(SESSION_SALT)) return false;
+  const index = await fetchJSON(INDEX_URL);
+  // Файлы перевыпустили с другой солью — старый ключ к ним уже не подойдёт.
+  if (index && index.salt !== sessionStorage.getItem(SESSION_SALT)) return false;
+  return openMine(index);
+}
+
+// Вход: хэш пускает внутрь, ключ выводится из того же пароля и соли индекса.
+async function unlock(password){
+  const index = await fetchJSON(INDEX_URL);
+  const salt = index ? index.salt : b64(crypto.getRandomValues(new Uint8Array(16)));
+  cryptoKey = await deriveKey(password, unb64(salt));
+  await rememberKey(salt);
+  return openMine(index);
+}
+
+// Нет файлов — просто нет личных записей: сайт остаётся расписанием группы.
+async function openMine(index){
+  MY_INDEX = null; MY_ITEMS = null; MY_CACHE.clear();
+  if (!index || !index.index) return true;
+  try{
+    MY_INDEX = await decryptIndex(index.index);
+  }catch(e){
+    console.error('Индекс не расшифровался:', e);
+    return true;
+  }
+  const mine = await fetchJSON(MINE_URL);
+  MY_ITEMS = mine && Array.isArray(mine.items) ? mine.items : null;
   return true;
 }
 
-// Вход: хэш только пускает внутрь, ключ выводится из того же пароля и соли файла.
-async function unlock(password){
-  TASKS_FILE = await fetchTasksFile();
-  const salt = TASKS_FILE ? unb64(TASKS_FILE.salt) : crypto.getRandomValues(new Uint8Array(16));
-  cryptoKey = await deriveKey(password, salt);
-  await rememberKey(salt);
-}
 document.getElementById('gateForm').addEventListener('submit', async e => {
   e.preventDefault();
   const input = document.getElementById('gateInput');
@@ -854,6 +882,14 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
 
 
     <div class="segrow">
+      <span class="seg-lab">Пары</span>
+      <div class="seg" id="uniseg" role="group" aria-label="Пары группы">
+        <button type="button" data-uni="1">Показать</button>
+        <button type="button" data-uni="0">Скрыть</button>
+      </div>
+    </div>
+
+    <div class="segrow">
       <span class="seg-lab">Меню</span>
       <div class="seg" id="sideseg" role="group" aria-label="Сторона меню">
         <button type="button" data-side="left">Слева</button>
@@ -921,7 +957,7 @@ const SHORT=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
 const RU_MONTHS=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 const KEY="sched_state_v2";
 let DATA=null, DATE_MAP={}, MONTHS=[], SUGG=[];
-let st={view:"list",cur:0,scope:"week",from:"",to:"",term:"",fDay:"",fType:"",fTeachers:[],pop:null,theme:"auto",side:"right",monthPtr:0};
+let st={view:"list",cur:0,scope:"week",from:"",to:"",term:"",fDay:"",fType:"",fTeachers:[],pop:null,theme:"auto",side:"right",monthPtr:0,uni:true};
 const mq=window.matchMedia("(prefers-color-scheme: dark)");
 
 /* ==== УТИЛИТЫ =============================================================== */
@@ -1031,45 +1067,50 @@ function weekRange(i){
 function todayWeek(){const now=new Date();for(let i=0;i<DATA.weeks.length;i++){const[a,z]=weekDates(i);
   if(!a)continue;if(now<=eod(z))return i;}return DATA.weeks.length-1;}
 
-/* ==== ЛИЧНЫЕ ЗАДАЧИ ==========================================================
-   Пары приходят из data.json (публичное расписание группы), задачи — из
-   tasks.json рядом в репозитории, зашифрованного паролем. Сайт их только
-   читает: Pages отдаёт статику, писать в репозиторий отсюда нельзя, и задача,
-   заведённая в браузере, осталась бы в одном этом браузере. Файл правит
-   утилита tools/vault.py, результат приезжает обычным коммитом.
+/* ==== ЛИЧНЫЕ ЗАПИСИ ==========================================================
+   Пары группы приходят из data.json, свои записи — из my-data.json по индексу.
+   Запись устроена как пара: предмет, тип, преподаватель, аудитория, — и встаёт
+   в ту же сетку, а не отдельным слоем.
 
-   Внутри файла — фрагменты, по одному на задачу, все одной длины: новый пункт
-   дописывается строкой, а со стороны не видно ни сколько задач, ни насколько
-   они подробные. С парами задачи совмещаются по дате при отрисовке
-   (dayHTML/renderWeek/renderMonth), не трогая логику самих пар. */
-const TASKS_URL="tasks.json";
-const TASK_CAT={
-  study:{label:"Учёба",color:"var(--blue)"},
-  work:{label:"Работа",color:"var(--gold)"},
-  personal:{label:"Личное",color:"var(--mint)"},
-  other:{label:"Другое",color:"var(--lav)"},
+   Берём из файла только показанный отрезок: индекс отсортирован, поэтому нужные
+   записи лежат подряд. Расшифрованное оседает в кэше — перелистывание недель
+   туда-обратно не повторяет работу. */
+const MY_TYPE={
+  "Лекция":{label:"Лекция",color:"var(--blue)"},
+  "Семинар":{label:"Семинар",color:"var(--lav)"},
+  "Практика":{label:"Практика",color:"var(--mint)"},
+  "Своё":{label:"Своё",color:"var(--gold)"},
 };
-let TASKS=[];
+// Время пары — то же, что в сетке расписания группы.
+const PAIR_TIME={"1":"8:30–10:00","2":"10:10–11:40","3":"12:30–14:00","4":"14:10–15:40",
+  "5":"15:50–17:20","6":"17:30–19:00","7":"19:10–20:40"};
+let MY=[];   // записи показанного отрезка
 
-// Расшифровка всего файла — единицы миллисекунд даже на тысячах пунктов,
-// поэтому никакого указателя по датам нет: он и был бы графиком наружу.
-async function loadTasks(){
-  TASKS=[];
-  if(!TASKS_FILE||!Array.isArray(TASKS_FILE.items))return;
-  for(const fragment of TASKS_FILE.items){
-    let task;
-    try{ task=await decryptFragment(fragment); }
-    catch(e){ console.error("Фрагмент не расшифровался:",e); continue; }
-    if(task&&task.title&&task.date)TASKS.push(task);   // добивочные пустышки дают null
+// "ДД.ММ.ГГГГ" -> "ГГГГММДД": такие строки сравниваются как даты.
+function dateKey(ru){const m=/^(\d{2})\.(\d{2})\.(\d{4})/.exec(ru||"");return m?m[3]+m[2]+m[1]:"";}
+
+async function loadMine(fromRu,toRu){
+  MY=[];
+  if(!MY_INDEX||!MY_ITEMS)return;
+  const from=dateKey(fromRu), to=dateKey(toRu);
+  for(const entry of MY_INDEX){
+    const key=dateKey(entry.d);
+    if(key<from)continue;
+    if(key>to)break;                       // дальше только более поздние
+    let record=MY_CACHE.get(entry.i);
+    if(record===undefined){
+      try{ record=await decryptFragment(MY_ITEMS[entry.i]); }
+      catch(e){ console.error("Фрагмент",entry.i,"не расшифровался:",e); record=null; }
+      MY_CACHE.set(entry.i,record);
+    }
+    if(record)MY.push(record);
   }
 }
-// Пары датированы строкой "ДД.ММ.ГГГГ", задачи — ISO.
-function ruToIso(ru){const m=/^(\d{2})\.(\d{2})\.(\d{4})/.exec(ru||"");return m?`${m[3]}-${m[2]}-${m[1]}`:"";}
-function taskMatch(t){const hay=(t.title+" "+(t.note||"")).toLowerCase();return hay.includes(st.term);}
-function tasksForRu(ru){
-  const iso=ruToIso(ru);
-  return TASKS.filter(t=>t.date===iso).filter(t=>!st.term||taskMatch(t))
-    .sort((a,b)=>(a.time||"").localeCompare(b.time||"")||a.title.localeCompare(b.title,"ru"));
+function myTime(r){return r.pair?PAIR_TIME[r.pair]:(r.time||"");}
+function myMatch(r){const hay=(r.subject+" "+(r.note||"")+" "+(r.teacher||"")).toLowerCase();return hay.includes(st.term);}
+function myForRu(ru){
+  return MY.filter(r=>r.date===ru).filter(r=>!st.term||myMatch(r))
+    .sort((a,b)=>(a.pair||"9").localeCompare(b.pair||"9")||(a.time||"").localeCompare(b.time||""));
 }
 
 /* ==== ФИЛЬТРЫ =============================================================== */
@@ -1077,6 +1118,7 @@ function tasksForRu(ru){
 // Пары другой подгруппы не показываются нигде: они не мои занятия.
 const MY_SUBGROUP="2";
 function match(l){
+  if(!st.uni)return false;               // рубильник: остаются только свои записи
   if(l.subgroup&&l.subgroup!==MY_SUBGROUP)return false;
   if(st.fType&&l.tn!==st.fType)return false;
   if(st.fTeachers.length&&!st.fTeachers.includes(l.teacher))return false;
@@ -1166,24 +1208,25 @@ function pairBody(ls,timeOf){
     +ls.map(l=>`<div class="sgcol${sgTint([l])}">${body(l,timeOf?timeOf(l):"")}</div>`).join("")
     +`</div></div>`;
 }
-// Компактный чип задачи для недели и месяца — те же классы, что у mline/mabbr
-// у лекций/семинаров, поэтому не нужно ни одного нового CSS-правила под сетку.
-function taskChipHTML(t){
-  const cat=TASK_CAT[t.category];
-  return `<div class="mline task-chip" title="${esc(t.title)}${t.note?" · "+esc(t.note):""}">`
-    +`${t.time?`<span class="mtime">${esc(t.time)}</span>`:""}`
-    +`<span class="mabbr" style="background:${cat.color}">${abbr(t.title)}</span></div>`;
+// Компактный чип для недели и месяца — те же классы, что у пар, поэтому под
+// сетку не нужно ни одного нового CSS-правила.
+function myChipHTML(r){
+  const cat=MY_TYPE[r.type]||MY_TYPE["Своё"];
+  return `<div class="mline task-chip" title="${esc(r.subject)}${r.note?" · "+esc(r.note):""}">`
+    +`${myTime(r)?`<span class="mtime">${esc(myTime(r))}</span>`:""}`
+    +`<span class="mabbr" style="background:${cat.color}">${abbr(r.subject)}</span></div>`;
 }
-// Полная карточка задачи для списка и попапа дня — .lesson с полоской по
-// категории вместо подгруппы (--stripe работает одинаково в обоих случаях).
-function taskCardHTML(t){
-  const cat=TASK_CAT[t.category];
-  return `<div class="lesson task${t.done?" task-done":""}" style="--stripe:${cat.color}">
+// Полная карточка для списка и попапа дня — .lesson с полоской по типу вместо
+// подгруппы: --stripe работает одинаково в обоих случаях.
+function myCardHTML(r){
+  const cat=MY_TYPE[r.type]||MY_TYPE["Своё"];
+  const meta=[r.teacher,r.room?"ауд. "+r.room:"",r.note].filter(Boolean).join(" · ");
+  return `<div class="lesson task" style="--stripe:${cat.color}">
     <div class="row">
       <div class="linfo">
-        <div class="l-head">${t.time?`<span class="l-time">${esc(t.time)}</span>`:""}<span class="pill" style="background:${cat.color}">${cat.label}</span></div>
-        <div class="subj">${hl(t.title)}</div>
-        ${t.note?`<div class="meta">${hl(t.note)}</div>`:""}
+        <div class="l-head">${myTime(r)?`<span class="l-time">${esc(myTime(r))}</span>`:""}<span class="pill" style="background:${cat.color}">${cat.label}</span></div>
+        <div class="subj">${hl(r.subject)}</div>
+        ${meta?`<div class="meta">${hl(meta)}</div>`:""}
       </div>
     </div>
   </div>`;
@@ -1192,12 +1235,12 @@ function dayHTML(wi,w,di,d){
   if(st.fDay&&d.day!==st.fDay)return"";
   const isToday=sameDay(d._dt,new Date());
   const hasSelf=d.pairs.some(p=>p.lessons.some(isSelf));
-  const dayTasks=tasksForRu(d.date);
-  const taskRows=dayTasks.map(taskCardHTML).join("");
+  const dayMine=myForRu(d.date);
+  const myRows=dayMine.map(myCardHTML).join("");
   const head=`<div class="day-head"><span class="day-name">${d.day}</span>
     <span class="day-date">${d.date}</span>${isToday?'<span class="today-pill">сегодня</span>':""}</div>`;
   if(hasSelf&&!filtersOn())
-    return `<section class="day${isToday?" today":""}">${head}<div class="selfstudy"><svg class="ic" aria-hidden="true"><use href="#i-leaf"/></svg> День самостоятельной работы</div>${taskRows}</section>`;
+    return `<section class="day${isToday?" today":""}">${head}<div class="selfstudy"><svg class="ic" aria-hidden="true"><use href="#i-leaf"/></svg> День самостоятельной работы</div>${myRows}</section>`;
   let rows="",any=false;
   d.pairs.forEach((p,pi)=>{
     const ls=p.lessons.filter(l=>!isSelf(l)).filter(match);
@@ -1213,8 +1256,8 @@ function dayHTML(wi,w,di,d){
     rows+=`<div class="pair${cls}"><div class="pair-time"><span class="n">${n||""}</span><span class="t">${tm||""}</span>${badge}</div>
       <div class="stack">${pairBody(ls,x=>lessonTime(x,p))}</div></div>`;
   });
-  if(!any&&!dayTasks.length)return"";
-  return `<section class="day${isToday?" today":""}">${head}${rows}${taskRows}</section>`;
+  if(!any&&!dayMine.length)return"";
+  return `<section class="day${isToday?" today":""}">${head}${rows}${myRows}</section>`;
 }
 
 /* ==== ОТРИСОВКА · список, неделя, месяц ===================================== */
@@ -1255,7 +1298,7 @@ function renderWeek(){
   // Задачи не привязаны к номеру пары, поэтому им — отдельная строка снизу,
   // а не собственная сетка часов: те же ячейки, тот же клик, что открывает день.
   html+=`<tr><td class="tm"><b>Задачи</b></td>`;
-  cols.forEach(di=>{const d=w.days[di];const chips=tasksForRu(d.date).map(taskChipHTML).join("");
+  cols.forEach(di=>{const d=w.days[di];const chips=myForRu(d.date).map(myChipHTML).join("");
     html+=`<td class="c" data-day="${di}" data-week="${st.cur}">${chips}</td>`;});
   html+="</tr>";
   return '<div class="hscroll">'+html+"</table></div>";
@@ -1308,23 +1351,23 @@ function renderMonth(){
     if(!ref){
       // День вне семестра (до 1 сентября / после сессии) — пар там нет,
       // но своя задача на такую дату всё равно должна быть видна.
-      const outTasks=tasksForRu(dt.toLocaleDateString("ru-RU")).map(taskChipHTML).join("");
-      html+=`<div class="mcell${t?" today":""}${q}"><div class="mn">${day}</div>${outTasks}</div>`;continue;}
+      const outMine=myForRu(dt.toLocaleDateString("ru-RU")).map(myChipHTML).join("");
+      html+=`<div class="mcell${t?" today":""}${q}"><div class="mn">${day}</div>${outMine}</div>`;continue;}
     const d=DATA.weeks[ref.wi].days[ref.di];
     const self=d.pairs.some(p=>p.lessons.some(isSelf));
     const items=[];
     d.pairs.forEach(p=>{
       p.lessons.filter(l=>!isSelf(l)).filter(match).forEach(l=>
         items.push({tm:(/(\d{1,2}:\d{2})/.exec(lessonTime(l,p))||[])[1]||"",l}));});
-    const dayTasks=tasksForRu(d.date);
+    const dayMine=myForRu(d.date);
     const lines=(self
       ? `<div class="mline selfline"><svg class="ic" aria-hidden="true"><use href="#i-leaf"/></svg></div>`
       : items.map(({tm,l})=>`<div class="mline" title="${esc(l.subject)}${l.room?" · ауд. "+esc(l.room):""}${l.teacher?" · "+esc(l.teacher):""}">
           <span class="mtime">${tm}</span>${l.subgroup?`<span class="msg sg${l.subgroup}">${l.subgroup}</span>`:""}<span class="mabbr" style="background:${typeColor(l.tn)}">${abbr(l.subject)}</span>`
           +`${l.room?`<span class="mroom">${esc(l.room)}</span>`:""}</div>`).join(""))
-      +dayTasks.map(taskChipHTML).join("");
+      +dayMine.map(myChipHTML).join("");
     const dayLessons=d.pairs.flatMap(p=>p.lessons).filter(match);
-    const dim=filtersOn()&&!dayLessons.filter(l=>!isSelf(l)).length&&!dayTasks.length?" dim":"";
+    const dim=filtersOn()&&!dayLessons.filter(l=>!isSelf(l)).length&&!dayMine.length?" dim":"";
     html+=`<div class="mcell${t?" today":""}${q}${dim||sgTint(dayLessons)}" data-day="${ref.di}" data-week="${ref.wi}"><div class="mn">${day}</div>${lines}</div>`;
   }
   return html+"</div></div>";
@@ -1408,6 +1451,23 @@ function scrollToToday(){
 }
 
 /* ==== ОТРИСОВКА · сборка страницы =========================================== */
+// Показать = подтянуть свои записи видимого отрезка и нарисовать. Две разные
+// работы, поэтому и функции две, а эта их соединяет.
+async function show(){
+  await loadMine(...visibleRuRange());
+  render();
+}
+// Границы показанного, русскими датами — в них записи и ищутся. В месяце шире
+// недели, поэтому берём весь месяц целиком.
+function visibleRuRange(){
+  const ru=d=>d.toLocaleDateString("ru-RU");
+  if(st.view==="month"){
+    const m=MONTHS[st.monthPtr];                       // {y, m} — год и номер месяца
+    if(m)return[ru(new Date(m.y,m.m,1)),ru(new Date(m.y,m.m+1,0))];
+  }
+  const[a,z]=currentRange();
+  return[ru(a),ru(z)];
+}
 function render(){
   M=nowMarks(); _mark=markKey(M);
   const c=$("content");
@@ -1520,7 +1580,7 @@ function fillLegend(d){
     +`<span class="lg"><i class="fill" style="background:var(--sg2)"></i>моя подгруппа</span>`
     +`<span class="lg"><i class="fill" style="background:var(--sg0)"></i>пара у всех</span>`;
   const tasks=`<span class="lg-title">Мои задачи</span>`
-    +Object.values(TASK_CAT).map(c=>`<span class="lg"><i style="background:${c.color}"></i>${c.label}</span>`).join("");
+    +Object.values(MY_TYPE).map(c=>`<span class="lg"><i style="background:${c.color}"></i>${c.label}</span>`).join("");
   $("legend").innerHTML=`<div class="lg-row">${type}</div><div class="lg-row">${fill}</div><div class="lg-row">${tasks}</div>`;
 }
 
@@ -1528,17 +1588,17 @@ function fillLegend(d){
 function bindViewButtons(){
   document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{
     if(b.dataset.view==="month"&&st.view!=="month")st.monthPtr=monthOfWeek(st.cur);
-    st.view=b.dataset.view;save();render();closeNav();});
+    st.view=b.dataset.view;save();show();closeNav();});
   // scope
-  document.querySelectorAll("[data-scope]").forEach(b=>b.onclick=()=>{st.scope=b.dataset.scope;st.view="list";save();render();closeNav();});
-  $("from").onchange=e=>{st.from=e.target.value;st.scope="custom";st.view="list";save();render();};
-  $("to").onchange=e=>{st.to=e.target.value;st.scope="custom";st.view="list";save();render();};
+  document.querySelectorAll("[data-scope]").forEach(b=>b.onclick=()=>{st.scope=b.dataset.scope;st.view="list";save();show();closeNav();});
+  $("from").onchange=e=>{st.from=e.target.value;st.scope="custom";st.view="list";save();show();};
+  $("to").onchange=e=>{st.to=e.target.value;st.scope="custom";st.view="list";save();show();};
 }
 
 /* Селектор недели или месяца в шапке. */
 function bindPicker(){
-  const goWeek=i=>{st.cur=clamp(i,0,DATA.weeks.length-1);st.scope="week";save();render();};
-  const goMonth=i=>{st.monthPtr=clamp(i,0,MONTHS.length-1);save();render();};
+  const goWeek=i=>{st.cur=clamp(i,0,DATA.weeks.length-1);st.scope="week";save();show();};
+  const goMonth=i=>{st.monthPtr=clamp(i,0,MONTHS.length-1);save();show();};
   const step=d=>inMonth()?goMonth(st.monthPtr+d):goWeek(st.cur+d);
   $("week").onchange=e=>inMonth()?goMonth(+e.target.value):goWeek(+e.target.value);
   $("prev").onclick=()=>step(-1);
@@ -1574,7 +1634,7 @@ function bindFilters(d){
 /* Сброс поиска и фильтров — одинаковый для кнопки в меню и плашки над расписанием. */
 function resetFilters(){
   st.term=st.fDay=st.fType=st.from=st.to="";st.fTeachers=[];st.scope="week";
-  restoreInputs();save();render();
+  restoreInputs();save();show();
 }
 
 /* Тема: авто, светлая, тёмная. */
@@ -1588,6 +1648,18 @@ function bindTheme(){
   $("theme").onclick=cycleTheme;if($("theme2"))$("theme2").onclick=cycleTheme;
   if(mq.addEventListener)mq.addEventListener("change",()=>{if(st.theme==="auto")applyTheme();});
   applyTheme();
+}
+
+/* Рубильник «пары группы»: расписание вуза убирается, свои записи остаются. */
+function bindUniToggle(){
+  const buttons=$("uniseg").querySelectorAll("button");
+  const sync=()=>buttons.forEach(b=>b.classList.toggle("active",(b.dataset.uni==="1")===!!st.uni));
+  buttons.forEach(b=>b.onclick=()=>{
+    const next=b.dataset.uni==="1";
+    if(next===!!st.uni)return;
+    st.uni=next; save(); sync(); show();
+  });
+  sync();
 }
 
 /* Сторона меню и его открытие. */
@@ -1674,6 +1746,7 @@ function initControls(){
   bindSearch(d);
   bindFilters(d);
   bindTheme();
+  bindUniToggle();
   bindSideToggle();
   bindShare();
   bindPNG();
@@ -2216,7 +2289,6 @@ async function boot(){
   }
   try{
     load();
-    await loadTasks();
     prep();
     const shared=hashRead();
     if(!["week","m1","custom"].includes(st.scope))st.scope="week";
@@ -2224,7 +2296,7 @@ async function boot(){
     if(!(st.cur>=0&&st.cur<DATA.weeks.length))st.cur=todayWeek();
     if(!shared&&!localStorage.getItem(KEY))st.cur=todayWeek();
     initControls();
-    render();
+    await show();
   }catch(e){
     console.error("Ошибка при сборке страницы:",e);
     schedulePlaceholder("Здесь скоро появится расписание.");
