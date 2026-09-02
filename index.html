@@ -616,18 +616,74 @@
 //   crypto.subtle.digest('SHA-256', new TextEncoder().encode('новый-пароль'))
 //     .then(b => console.log([...new Uint8Array(b)].map(x => x.toString(16).padStart(2,'0')).join('')))
 // и вставить результат вместо строки ниже.
-const PASSWORD_HASH = '494a715f7e9b4071aca61bac42ca858a309524e5864f0920030862a4ae7589be'; // пароль по умолчанию: changeme123 — смените его
+const PASSWORD_HASH = '8b9b4c6f2e37fdf0fbd0935b2162503d2d7ad2666f1e89000ef7a7b045372d51';
 async function sha256Hex(text){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 function hideGate(){ document.getElementById('gate').hidden = true; }
+
+/* ==== ШИФРОВАНИЕ ЗАДАЧ =======================================================
+   Пароль открывает не только вход, но и сами задачи: из него выводится ключ
+   AES-GCM, которым шифруется всё, что уходит в localStorage. Без пароля там
+   лежит шифротекст — открыв devtools на чужом ноутбуке, задачи не прочитать.
+   Соль хранится открыто: она не секрет, её дело — чтобы одинаковые пароли
+   на разных машинах давали разные ключи. */
+const SALT_KEY = 'schedule.salt';
+const SESSION_KEY = 'schedule.key';
+let cryptoKey = null;
+
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
+
+function getSalt(){
+  let saved = localStorage.getItem(SALT_KEY);
+  if (!saved) { saved = b64(crypto.getRandomValues(new Uint8Array(16))); localStorage.setItem(SALT_KEY, saved); }
+  return unb64(saved);
+}
+
+// 150000 итераций: для входа это незаметные доли секунды, для перебора паролей —
+// множитель, из-за которого перебор перестаёт быть мгновенным.
+async function deriveKey(password){
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: getSalt(), iterations: 150000, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+}
+
+// Свой вектор на каждую запись — иначе повторное шифрование тем же ключом
+// выдаёт, что данные не менялись.
+async function encryptJSON(value){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, new TextEncoder().encode(JSON.stringify(value)));
+  return JSON.stringify({ iv: b64(iv), ct: b64(ct) });
+}
+
+async function decryptJSON(text){
+  const { iv, ct } = JSON.parse(text);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv) }, cryptoKey, unb64(ct));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+// Ключ переживает перезагрузку страницы, но не закрытие вкладки. Кладём именно
+// ключ, а не пароль: пароль после входа нигде не остаётся, и перевыводить его
+// через PBKDF2 на каждый F5 не приходится.
+async function rememberKey(){
+  sessionStorage.setItem(SESSION_KEY, b64(await crypto.subtle.exportKey('raw', cryptoKey)));
+}
+async function restoreKey(){
+  const raw = sessionStorage.getItem(SESSION_KEY);
+  if (!raw) return false;
+  cryptoKey = await crypto.subtle.importKey('raw', unb64(raw), 'AES-GCM', true, ['encrypt', 'decrypt']);
+  return true;
+}
 document.getElementById('gateForm').addEventListener('submit', async e => {
   e.preventDefault();
   const input = document.getElementById('gateInput');
   const hash = await sha256Hex(input.value);
   if (hash === PASSWORD_HASH) {
-    sessionStorage.setItem('schedule.unlocked', '1');
+    cryptoKey = await deriveKey(input.value);
+    await rememberKey();
     hideGate();
     boot();
   } else {
@@ -636,8 +692,8 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
     input.focus();
   }
 });
-// Барьер от случайных заходов по ссылке, а не защита: страница и её код видны
-// любому, а личные задачи не коммитятся в git — они живут только в localStorage.
+// Код страницы виден любому — секрет здесь один, и это пароль: он и пускает
+// внутрь, и держит ключ, которым зашифрованы задачи.
 </script>
 <svg id="icons" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
   <!-- цветной набор: заливка мягкая, контур насыщенный, цвета из палитры сайта -->
@@ -679,6 +735,8 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3" fill="var(--blue-soft)" stroke="var(--blue-ink)"/><circle cx="8.5" cy="10" r="1.6" fill="var(--gold)" stroke="none"/><path d="M4.5 17l4.5-4.5 3.5 3.5 2.5-2.5 4.5 4" stroke="var(--blue-ink)"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="var(--blue-soft)" stroke="var(--blue-ink)"/><path d="M12 11v5" stroke="var(--blue-ink)"/><path d="M12 7.8h.01" stroke="var(--blue-ink)" stroke-width="2.4"/></symbol>
   <symbol id="i-thermo" viewBox="0 0 24 24"><path d="M13.5 14.2V5.5a2 2 0 1 0-4 0v8.7a4 4 0 1 0 4 0z" fill="var(--pink-soft)" stroke="var(--pink-ink)"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" fill="var(--mint-soft)" stroke="var(--mint-ink)"/><path d="M12 4v10" stroke="var(--mint-ink)"/><path d="M8.5 10.5L12 14l3.5-3.5" stroke="var(--mint-ink)"/></symbol>
+  <symbol id="i-import" viewBox="0 0 24 24"><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" fill="var(--lav-soft)" stroke="var(--lav-ink)"/><path d="M12 14V4" stroke="var(--lav-ink)"/><path d="M8.5 7.5L12 4l3.5 3.5" stroke="var(--lav-ink)"/></symbol>
 </svg>
 <script>
 /* Раскладка решается ДО первой отрисовки: скрипт страницы стоит в конце,
@@ -779,6 +837,13 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
     <div class="side-h">Мои задачи</div>
     <button id="addTask" class="side-btn" type="button">
       <svg class="ic" aria-hidden="true"><use href="#i-star"/></svg> Добавить задачу</button>
+    <div class="side-row" style="margin-top:6px">
+      <button id="exportTasks" class="actbtn" type="button" title="Сохранить задачи в файл — резервная копия на случай забытого пароля">
+        <svg class="ic" aria-hidden="true"><use href="#i-export"/></svg> Экспорт</button>
+      <button id="importTasks" class="actbtn" type="button" title="Загрузить задачи из файла">
+        <svg class="ic" aria-hidden="true"><use href="#i-import"/></svg> Импорт</button>
+    </div>
+    <input id="importTasksInput" type="file" accept="application/json,.json" hidden />
 
     <div class="segrow">
       <span class="seg-lab">Меню</span>
@@ -1009,8 +1074,55 @@ const TASK_CAT={
   other:{label:"Другое",color:"var(--lav)"},
 };
 let TASKS=[];
-function loadTasks(){try{TASKS=JSON.parse(localStorage.getItem(TASK_KEY))||[];}catch{TASKS=[];}}
-function saveTasks(){localStorage.setItem(TASK_KEY,JSON.stringify(TASKS));}
+// Задачи лежат зашифрованными (см. блок шифрования в скрипте пароля), поэтому
+// чтение и запись асинхронные — и всё, что их дёргает, тоже.
+async function loadTasks(){
+  const raw=localStorage.getItem(TASK_KEY);
+  if(!raw){TASKS=[];return;}
+  try{
+    // Массивом лежат задачи, заведённые до появления шифрования: подхватываем
+    // их и тут же перекладываем в шифротекст, иначе они пропали бы молча.
+    const parsed=JSON.parse(raw);
+    if(Array.isArray(parsed)){TASKS=parsed;await saveTasks();return;}
+    TASKS=await decryptJSON(raw)||[];
+  }catch(e){
+    console.error("Задачи не расшифровались:",e);
+    TASKS=[];
+  }
+}
+async function saveTasks(){localStorage.setItem(TASK_KEY,await encryptJSON(TASKS));}
+
+/* Бэкап задач обычным читаемым JSON. Это осознанная страховка, а не дыра:
+   зашифрованное хранилище без пароля не открыть в принципе, и забытый пароль
+   означал бы потерю всех задач. С файлом можно завести новый пароль и вернуть
+   их обратно. Файл лежит у Вики на диске и в репозиторий не попадает. */
+function exportTasks(){
+  const blob=new Blob([JSON.stringify({tasks:TASKS,exportedAt:new Date().toISOString()},null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=`задачи-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+// Импорт заменяет список целиком, а не подмешивает: файл — это снимок, и слияние
+// по id дало бы наполовину старое состояние, которое потом не объяснить.
+async function importTasks(file){
+  const parsed=JSON.parse(await file.text());
+  const list=Array.isArray(parsed)?parsed:parsed.tasks;
+  if(!Array.isArray(list))throw new Error("в файле нет списка задач");
+  TASKS=list.filter(t=>t&&t.title&&t.date).map(t=>({
+    id:t.id||crypto.randomUUID(),
+    title:String(t.title),
+    date:String(t.date),
+    time:t.time||"",
+    duration:t.duration?Number(t.duration):null,
+    category:TASK_CAT[t.category]?t.category:"other",
+    note:t.note||"",
+    done:!!t.done,
+  }));
+  await saveTasks();render();
+  return TASKS.length;
+}
 // Пары датированы строкой "ДД.ММ.ГГГГ", задачи — ISO из <input type=date>.
 function ruToIso(ru){const m=/^(\d{2})\.(\d{2})\.(\d{4})/.exec(ru||"");return m?`${m[3]}-${m[2]}-${m[1]}`:"";}
 function taskMatch(t){const hay=(t.title+" "+(t.note||"")).toLowerCase();return hay.includes(st.term);}
@@ -1019,13 +1131,13 @@ function tasksForRu(ru){
   return TASKS.filter(t=>t.date===iso).filter(t=>!st.term||taskMatch(t))
     .sort((a,b)=>(a.time||"").localeCompare(b.time||"")||a.title.localeCompare(b.title,"ru"));
 }
-function upsertTask(task){
+async function upsertTask(task){
   const i=TASKS.findIndex(t=>t.id===task.id);
   if(i===-1)TASKS.push(task);else TASKS[i]=task;
-  saveTasks();render();
+  await saveTasks();render();
 }
-function deleteTask(id){TASKS=TASKS.filter(t=>t.id!==id);saveTasks();render();}
-function toggleTaskDone(id){const t=TASKS.find(t=>t.id===id);if(t){t.done=!t.done;saveTasks();render();}}
+async function deleteTask(id){TASKS=TASKS.filter(t=>t.id!==id);await saveTasks();render();}
+async function toggleTaskDone(id){const t=TASKS.find(t=>t.id===id);if(t){t.done=!t.done;await saveTasks();render();}}
 
 /* ==== ФИЛЬТРЫ =============================================================== */
 // Сайт личный — своя подгруппа зашита здесь, а не выбирается в меню.
@@ -1621,9 +1733,24 @@ function openTaskForm(task){
 function closeTaskForm(){$("taskpop").classList.add("hidden");}
 function bindTasks(){
   $("addTask").onclick=()=>openTaskForm(null);
+  $("exportTasks").onclick=exportTasks;
+  $("importTasks").onclick=()=>$("importTasksInput").click();
+  $("importTasksInput").onchange=async e=>{
+    const file=e.target.files[0];
+    if(!file)return;
+    try{
+      const n=await importTasks(file);
+      alert(`Загружено задач: ${n}`);
+    }catch(err){
+      console.error("Импорт не удался:",err);
+      alert("Не получилось прочитать файл: "+err.message);
+    }
+    // сбрасываем, иначе повторный выбор того же файла не даст события
+    e.target.value="";
+  };
   $("taskpop-x").onclick=closeTaskForm;
   $("taskpop").onclick=e=>{if(e.target===$("taskpop"))closeTaskForm();};
-  $("taskForm").onsubmit=e=>{
+  $("taskForm").onsubmit=async e=>{
     e.preventDefault();
     const prev=editingTaskId?TASKS.find(t=>t.id===editingTaskId):null;
     const task={
@@ -1637,11 +1764,11 @@ function bindTasks(){
       done:prev?prev.done:false,
     };
     if(!task.title||!task.date)return;
-    upsertTask(task);
+    await upsertTask(task);
     closeTaskForm();
   };
-  $("tf-delete").onclick=()=>{
-    if(editingTaskId&&confirm("Удалить эту задачу?")){deleteTask(editingTaskId);closeTaskForm();}
+  $("tf-delete").onclick=async()=>{
+    if(editingTaskId&&confirm("Удалить эту задачу?")){await deleteTask(editingTaskId);closeTaskForm();}
   };
   // Делегирование одним слушателем на весь документ: карточки задач есть
   // и в #content (список), и в #daypop-body (попап дня) — оба места разом.
@@ -2226,7 +2353,7 @@ async function boot(){
   }
   try{
     load();
-    loadTasks();
+    await loadTasks();
     prep();
     const shared=hashRead();
     if(!["week","m1","custom"].includes(st.scope))st.scope="week";
@@ -2250,9 +2377,9 @@ async function boot(){
   requestAnimationFrame(()=>requestAnimationFrame(dropPreload));
   setTimeout(dropPreload,120);
 }
-// boot() запускается сразу, только если пароль уже введён в этой вкладке
-// (sessionStorage) — иначе его вызывает обработчик формы после верного пароля.
-if (sessionStorage.getItem('schedule.unlocked') === '1') { hideGate(); boot(); }
+// boot() запускается сразу, только если ключ уже лежит в этой вкладке —
+// иначе его вызывает обработчик формы после верного пароля.
+restoreKey().then(ok => { if (ok) { hideGate(); boot(); } });
 </script>
 </body>
 </html>
