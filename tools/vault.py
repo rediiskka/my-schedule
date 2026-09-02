@@ -219,6 +219,7 @@ def build(args, prev=None):
         "teacher": args.teacher if args.teacher is not None else prev.get("teacher", ""),
         "room": args.room if args.room is not None else prev.get("room", ""),
         "note": args.note if args.note is not None else prev.get("note", ""),
+        "tags": list(args.tag) if args.tag else prev.get("tags", []),
     }
     if not record["subject"] or not record["date"]:
         raise SystemExit("обязательны --subject и --date")
@@ -246,6 +247,8 @@ def show(records):
         where = f"  ауд. {record['room']}" if record.get("room") else ""
         print(f"{record['date']}  {when}  {record['subject']}"
               f"  [{record.get('type', '')}]{who}{where}  ({record['id'][:8]})")
+        if record.get("tags"):
+            print("      " + " ".join("#" + t for t in record["tags"]))
         if record.get("note"):
             print(f"      {record['note']}")
 
@@ -280,6 +283,8 @@ def main():
         p.add_argument("--teacher")
         p.add_argument("--room")
         p.add_argument("--note")
+        p.add_argument("--tag", action="append",
+                       help="метка по смыслу: спорт, здоровье, подработка. Можно несколько")
 
     for name, help_text in (("list", "показать записи"), ("add", "добавить"),
                             ("edit", "изменить"), ("rm", "удалить")):
@@ -289,6 +294,7 @@ def main():
                        help="локальный слой: видно только на своей машине, в git не уедет")
         if name == "list":
             p.add_argument("--from", dest="date_from", help="с этой даты")
+            p.add_argument("--filter-tag", dest="filter_tag", help="только записи с этой меткой")
             p.add_argument("--to", dest="date_to", help="по эту дату")
         if name in ("edit", "rm"):
             p.add_argument("--id", required=True)
@@ -310,6 +316,8 @@ def main():
             chosen = [r for r in chosen if day_key(r.get("date", "")) >= day_key(args.date_from)]
         if args.date_to:
             chosen = [r for r in chosen if day_key(r.get("date", "")) <= day_key(args.date_to)]
+        if getattr(args, "filter_tag", None):
+            chosen = [r for r in chosen if args.filter_tag in (r.get("tags") or [])]
         show(chosen)
         return
 

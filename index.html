@@ -474,6 +474,9 @@
   .mstack .mline + .mline{border-top:1.5px dashed color-mix(in srgb,var(--ink) 26%,transparent);
     padding-top:2px;margin-top:2px}
   .pill.clash-pill{background:var(--now);color:var(--on-accent)}
+  .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+  .tag{font-size:11px;font-weight:600;color:var(--lav-ink);background:var(--lav-soft);
+    border-radius:999px;padding:1px 8px}
   .lesson.task.clash{outline:2px solid var(--now);outline-offset:-2px}
   .pill.mine-pill{display:inline-flex;align-items:center;gap:4px;
     background:var(--pink-soft);color:var(--pink-ink)}
@@ -921,6 +924,8 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
     <div class="side-h">Фильтры</div>
     <!-- Подгруппы нет: сайт личный, пары чужой подгруппы уже не показываются
          нигде (см. MY_SUBGROUP в match()) — отдельный переключатель не нужен. -->
+    <div class="side-field"><label for="f-tag">Метка</label>
+      <select id="f-tag" class="ctl"></select></div>
     <div class="side-field"><label for="f-day">День</label>
       <select id="f-day" class="ctl"></select></div>
     <div class="side-field"><label for="f-type">Тип пары</label>
@@ -1003,7 +1008,7 @@ const SHORT=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
 const RU_MONTHS=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 const KEY="sched_state_v2";
 let DATA=null, DATE_MAP={}, MONTHS=[], SUGG=[];
-let st={view:"list",cur:0,scope:"m1",from:"",to:"",term:"",fDay:"",fType:"",fTeachers:[],pop:null,theme:"auto",side:"right",monthPtr:0,uni:true};
+let st={view:"list",cur:0,scope:"m1",from:"",to:"",term:"",fDay:"",fType:"",fTeachers:[],pop:null,theme:"auto",side:"right",monthPtr:0,uni:true,fTag:""};
 const mq=window.matchMedia("(prefers-color-scheme: dark)");
 
 /* ==== УТИЛИТЫ =============================================================== */
@@ -1155,9 +1160,20 @@ async function loadMine(fromRu,toRu){
   }
 }
 function myTime(r){return r.pair?PAIR_TIME[r.pair]:(r.time||"");}
-function myMatch(r){const hay=(r.subject+" "+(r.note||"")+" "+(r.teacher||"")).toLowerCase();return hay.includes(st.term);}
+function myMatch(r){
+  const hay=(r.subject+" "+(r.note||"")+" "+(r.teacher||"")+" "+(r.tags||[]).join(" ")).toLowerCase();
+  return hay.includes(st.term);
+}
+// Все метки, что встречаются в показанном отрезке — из них собирается фильтр.
+function myTags(){
+  const seen=new Set();
+  MY.forEach(r=>(r.tags||[]).forEach(t=>seen.add(t)));
+  return [...seen].sort((a,b)=>a.localeCompare(b,"ru"));
+}
 function myForRu(ru){
-  return MY.filter(r=>r.date===ru).filter(r=>!st.term||myMatch(r))
+  return MY.filter(r=>r.date===ru)
+    .filter(r=>!st.fTag||(r.tags||[]).includes(st.fTag))
+    .filter(r=>!st.term||myMatch(r))
     .sort((a,b)=>(a.pair||"9").localeCompare(b.pair||"9")||(a.time||"").localeCompare(b.time||""));
 }
 
@@ -1287,6 +1303,7 @@ function myCardHTML(r,clash){
         <div class="l-head"><span class="pill mine-pill">${MINE_MARK} моё</span>${r.type&&r.type!=="Своё"?`<span class="pill" style="background:${cat.color}">${cat.label}</span>`:""}${clash?`<span class="pill clash-pill">наложение</span>`:""}</div>
         <div class="subj">${hl(r.subject)}</div>
         ${meta.length?`<div class="meta">${meta.join("")}</div>`:""}
+        ${(r.tags||[]).length?`<div class="tags">${r.tags.map(t=>`<span class="tag">#${esc(t)}</span>`).join("")}</div>`:""}
         ${note}
       </div>
       ${room}
@@ -1655,6 +1672,7 @@ function visibleRuRange(){
 function render(){
   M=nowMarks(); _mark=markKey(M);
   syncPeriodInputs();          // поля периода показывают то, что открыто сейчас
+  fillTagFilter();
   const c=$("content");
   if(st.view==="list"){c.innerHTML=renderList();scrollToToday();}
   else if(st.view==="week"){c.innerHTML=renderWeek();centerToday();}
@@ -1824,6 +1842,7 @@ function bindSearch(d){
 
 /* Фильтры: день, тип, подгруппа, преподаватели. */
 function bindFilters(d){
+  $("f-tag").onchange=e=>{st.fTag=e.target.value;save();show();};
   $("f-day").onchange=e=>{st.fDay=e.target.value;save();render();};
   $("f-type").onchange=e=>{st.fType=e.target.value;save();render();};
   $("f-teacher-btn").onclick=()=>{
@@ -1840,7 +1859,7 @@ function bindFilters(d){
 
 /* Сброс поиска и фильтров — одинаковый для кнопки в меню и плашки над расписанием. */
 function resetFilters(){
-  st.term=st.fDay=st.fType=st.from=st.to="";st.fTeachers=[];st.scope="week";
+  st.term=st.fDay=st.fType=st.fTag=st.from=st.to="";st.fTeachers=[];st.scope="m1";
   restoreInputs();save();show();
 }
 
@@ -1947,6 +1966,16 @@ function syncPeriodInputs(){
   const[a,z]=currentRange();
   $("from").value=st.from||isoDate(a);
   $("to").value=st.to||isoDate(z);
+}
+function fillTagFilter(){
+  const sel=$("f-tag");
+  if(!sel)return;
+  const tags=myTags();
+  sel.innerHTML=`<option value="">Все</option>`+tags.map(t=>`<option value="${esc(t)}">#${esc(t)}</option>`).join("");
+  if(st.fTag&&!tags.includes(st.fTag))st.fTag="";
+  sel.value=st.fTag;
+  const field=sel.closest(".side-field");
+  if(field)field.hidden=!tags.length;
 }
 function restoreInputs(){
   $("q").value=st.term;$("f-day").value=st.fDay;$("f-type").value=st.fType;
