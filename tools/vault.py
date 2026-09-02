@@ -67,6 +67,10 @@ TYPES = ("Лекция", "Семинар", "Практика", "Своё")
 HORIZONS = ("time", "day", "week", "month", "season")
 PLACED = ("me", "auto")
 
+# Повторяющееся дело хранится одним фрагментом с правилом, а не полусотней
+# одинаковых записей: перенести танцы на час позже — одна правка, а не пятьдесят.
+WEEKDAYS = {"пн": 0, "вт": 1, "ср": 2, "чт": 3, "пт": 4, "сб": 5, "вс": 6}
+
 
 # ---- пароль и ключ ----------------------------------------------------------
 
@@ -188,7 +192,7 @@ def save(key, salt, records, local=False):
 
     entries = [{"d": r.get("date") or (r.get("period", "").split("-")[0] if r.get("period") else ""),
                 "p": r.get("pair") or r.get("time", ""),
-                "h": r.get("horizon", "time"),
+                "h": "repeat" if r.get("repeat") else r.get("horizon", "time"),
                 "i": i}
                for i, r in enumerate(ordered)]
 
@@ -214,6 +218,34 @@ def sort_key(record, blank="9"):
     date = record.get("date") or (record.get("period", "").split("-")[0] if record.get("period") else "")
     day, month, year = (date.split(".") + ["", "", ""])[:3]
     return (year, month, day, record.get("pair") or blank, record.get("time", ""))
+
+
+def parse_repeat(args):
+    """«вт,чт» плюс дата окончания — в правило повторения."""
+    if not args.repeat:
+        return None
+    days = []
+    for part in args.repeat.split(","):
+        key = part.strip().lower()[:2]
+        if key not in WEEKDAYS:
+            raise SystemExit(f"день недели один из: {', '.join(WEEKDAYS)}")
+        days.append(WEEKDAYS[key])
+    if not args.until:
+        raise SystemExit("к --repeat нужен --until: до какой даты повторять")
+    if not DATE_RE.match(args.until):
+        raise SystemExit("дата окончания в формате ДД.ММ.ГГГГ")
+    return {"days": sorted(set(days)), "until": args.until}
+
+
+def parse_moves(pairs):
+    """«15.09.2026=22.09.2026» — перенос одного повторения на другую дату."""
+    out = {}
+    for item in pairs or []:
+        src, _, dst = item.partition("=")
+        if not DATE_RE.match(src.strip()) or not DATE_RE.match(dst.strip()):
+            raise SystemExit("перенос задаётся как ДД.ММ.ГГГГ=ДД.ММ.ГГГГ")
+        out[src.strip()] = dst.strip()
+    return out
 
 
 def guess_horizon(args, prev):
@@ -250,6 +282,9 @@ def build(args, prev=None):
         "room": args.room if args.room is not None else prev.get("room", ""),
         "note": args.note if args.note is not None else prev.get("note", ""),
         "tags": list(args.tag) if args.tag else prev.get("tags", []),
+        "repeat": parse_repeat(args) or prev.get("repeat"),
+        "skip": sorted(set((prev.get("skip") or []) + list(args.skip or []))),
+        "move": {**(prev.get("move") or {}), **parse_moves(args.move)},
     }
     # Обязательное зависит только от горизонта — в этом весь смысл модели.
     if not record["subject"]:
@@ -262,6 +297,8 @@ def build(args, prev=None):
     if horizon in ("time", "day"):
         if not record["date"]:
             raise SystemExit(f"при горизонте {horizon} нужна --date")
+        if record["repeat"] and record["repeat"]["until"] < record["date"]:
+            raise SystemExit("дата окончания повторов раньше первой даты")
         if not DATE_RE.match(record["date"]):
             raise SystemExit("дата в формате ДД.ММ.ГГГГ, как в расписании группы")
     if horizon == "time" and not record["pair"] and not record["time"]:
@@ -294,6 +331,14 @@ def show(records):
                 when += f" +{record['duration']}м"
         who = f"  {record['teacher']}" if record.get("teacher") else ""
         where = f"  ауд. {record['room']}" if record.get("room") else ""
+        rep = record.get("repeat")
+        if rep:
+            names = [k for k, v in sorted(WEEKDAYS.items(), key=lambda kv: kv[1]) if v in rep["days"]]
+            when += f"  ↻ {','.join(names)} до {rep['until']}"
+            if record.get("skip"):
+                when += f", кроме {', '.join(record['skip'])}"
+            if record.get("move"):
+                when += ", перенос " + ", ".join(f"{a}→{b}" for a, b in record["move"].items())
         auto = " ~" if record.get("placed") == "auto" else "  "
         print(f"{record.get('date') or '..........'}{auto}{when}  {record['subject']}"
               f"  [{record.get('type', '')}]{who}{where}  ({record['id'][:8]})")
@@ -341,6 +386,11 @@ def main():
         p.add_argument("--placed", choices=PLACED,
                        help="me — время выбрано владельцем, auto — предложено ассистентом")
         p.add_argument("--parent", help="id дела, из которого это выросло")
+        p.add_argument("--repeat", help="дни недели через запятую: вт,чт")
+        p.add_argument("--until", help="до какой даты повторять, ДД.ММ.ГГГГ")
+        p.add_argument("--skip", action="append", help="отменить одно повторение: ДД.ММ.ГГГГ")
+        p.add_argument("--move", action="append",
+                       help="перенести одно повторение: ДД.ММ.ГГГГ=ДД.ММ.ГГГГ")
 
     for name, help_text in (("list", "показать записи"), ("add", "добавить"),
                             ("edit", "изменить"), ("rm", "удалить"),

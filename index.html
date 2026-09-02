@@ -1158,9 +1158,10 @@ async function loadMine(fromRu,toRu){
   const from=dateKey(fromRu), to=dateKey(toRu);
   for(const entry of MY_INDEX){
     const key=dateKey(entry.d);
-    // Бессрочные дела стоят в начале индекса без даты: они не привязаны к окну
-    // и должны быть видны всегда, иначе «закрыть сессию» пропадёт из виду.
-    if(entry.h!=="season"){
+    // Бессрочные дела и правила повторения не привязаны к окну: первое должно
+    // быть видно всегда, второе начинается раньше показанного отрезка, но
+    // действует внутри него.
+    if(entry.h!=="season"&&entry.h!=="repeat"){
       if(key<from)continue;
       if(key>to)break;                     // дальше только более поздние
     }
@@ -1170,8 +1171,44 @@ async function loadMine(fromRu,toRu){
       catch(e){ console.error("Фрагмент",entry.i,"не расшифровался:",e); record=null; }
       MY_CACHE.set(entry.i,record);
     }
-    if(record)MY.push(record);
+    if(!record)continue;
+    if(record.repeat)MY.push(...expandRepeat(record,fromRu,toRu));
+    else MY.push(record);
   }
+}
+
+// Правило повторения разворачивается в даты показанного отрезка: в файле лежит
+// одна запись, на экране — все её повторения. Отменённые даты пропускаются,
+// перенесённые встают на новое число.
+function expandRepeat(rule,fromRu,toRu){
+  const out=[];
+  const start=ruToDate(rule.date), stop=ruToDate(rule.repeat.until);
+  const from=ruToDate(fromRu), to=ruToDate(toRu);
+  if(!start||!stop||!from||!to)return out;
+  const skip=new Set(rule.skip||[]);
+  const moves=rule.move||{};
+  const first=new Date(Math.max(start.getTime(),from.getTime()));
+  const last=new Date(Math.min(stop.getTime(),to.getTime()));
+  for(const d=new Date(first);d<=last;d.setDate(d.getDate()+1)){
+    if(!rule.repeat.days.includes((d.getDay()+6)%7))continue;
+    const ru=d.toLocaleDateString("ru-RU");
+    if(skip.has(ru))continue;
+    out.push({...rule,date:moves[ru]||ru,repeat:null,_fromRule:rule.id});
+  }
+  // Перенос мог увести повторение за пределы окна показа — тогда его здесь нет,
+  // и это правильно: оно появится в том отрезке, куда его перенесли.
+  Object.entries(moves).forEach(([src,dst])=>{
+    const at=ruToDate(dst);
+    if(!at||at<from||at>to)return;
+    if(out.some(r=>r.date===dst))return;
+    const was=ruToDate(src);
+    if(was&&was>=start&&was<=stop)out.push({...rule,date:dst,repeat:null,_fromRule:rule.id});
+  });
+  return out;
+}
+function ruToDate(ru){
+  const m=/^(\d{2})\.(\d{2})\.(\d{4})/.exec(ru||"");
+  return m?new Date(Number(m[3]),Number(m[2])-1,Number(m[1])):null;
 }
 function myTime(r){return r.pair?PAIR_TIME[r.pair]:(r.time||"");}
 function myMatch(r){
