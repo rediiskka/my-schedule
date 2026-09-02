@@ -972,6 +972,8 @@ let st={view:"list",cur:0,scope:"m1",from:"",to:"",term:"",fDay:"",fType:"",fTea
 const mq=window.matchMedia("(prefers-color-scheme: dark)");
 
 /* ==== УТИЛИТЫ =============================================================== */
+// input type=date понимает только ГГГГ-ММ-ДД.
+function isoDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
 const $=id=>document.getElementById(id);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const esc=s=>(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
@@ -1519,6 +1521,7 @@ function visibleRuRange(){
 }
 function render(){
   M=nowMarks(); _mark=markKey(M);
+  syncPeriodInputs();          // поля периода показывают то, что открыто сейчас
   const c=$("content");
   if(st.view==="list"){c.innerHTML=renderList();scrollToToday();}
   else if(st.view==="week"){c.innerHTML=renderWeek();centerToday();}
@@ -1644,7 +1647,24 @@ function bindViewButtons(){
 
 /* Селектор недели или месяца в шапке. */
 function bindPicker(){
-  const goWeek=i=>{st.cur=clamp(i,0,DATA.weeks.length-1);st.scope="week";save();show();};
+  // В списке селектор недели не переключает период, а отсекает его начало: показ
+  // открывается с выбранной недели. Конец берётся максимумом — короткий период
+  // (скажем, три дня) дотянется до конца недели, длинный останется как есть.
+  // Иначе выбор недели схлопывал бы заданный месяц и стирал поля, а прокручивать
+  // до нужной недели через весь месяц — мучение.
+  const goWeek=i=>{
+    st.cur=clamp(i,0,DATA.weeks.length-1);
+    if(st.view==="list"){
+      const[a,z]=weekDates(st.cur);
+      const[,end]=currentRange();
+      if(a)st.from=isoDate(a);
+      const keep=st.to||isoDate(end);
+      const weekEnd=z?isoDate(z):keep;
+      st.to=keep>weekEnd?keep:weekEnd;
+      st.scope="custom";
+    }else st.scope="week";
+    save();show();
+  };
   const goMonth=i=>{st.monthPtr=clamp(i,0,MONTHS.length-1);save();show();};
   const step=d=>inMonth()?goMonth(st.monthPtr+d):goWeek(st.cur+d);
   $("week").onchange=e=>inMonth()?goMonth(+e.target.value):goWeek(+e.target.value);
@@ -1765,14 +1785,18 @@ function bindGrid(){
 }
 
 /* Возврат значений в поля из состояния. */
-// input type=date понимает только ГГГГ-ММ-ДД.
-function isoDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
+// Поля периода — не ввод пользователя, а отражение того, что открыто: после
+// навигации селектором они обязаны показать новый диапазон, а не прежний.
+function syncPeriodInputs(){
+  const[a,z]=currentRange();
+  $("from").value=st.from||isoDate(a);
+  $("to").value=st.to||isoDate(z);
+}
 function restoreInputs(){
   $("q").value=st.term;$("f-day").value=st.fDay;$("f-type").value=st.fType;
   // Свой период не задан — показываем в полях тот, что и так открыт: пустые поля
   // рядом с непустым расписанием читаются как «период не выбран».
-  if(st.from||st.to){ $("from").value=st.from; $("to").value=st.to; }
-  else{ const[a,z]=currentRange(); $("from").value=isoDate(a); $("to").value=isoDate(z); }
+  syncPeriodInputs();
   document.querySelectorAll("#f-teacher-list input").forEach(cb=>cb.checked=st.fTeachers.includes(cb.value));
   syncTeacherBtn();
   renderFooter();
