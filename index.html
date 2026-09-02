@@ -552,15 +552,7 @@
   .lg i{width:12px;height:12px;border-radius:50%;display:inline-block}
   .lg i.ring{background:transparent!important;border:2px solid var(--gold)}
   .lg i.ring.now{border-color:var(--now)}
-  footer{color:var(--muted);font-size:12px;line-height:1.5;padding:18px 0 60px;
-    border-top:1px solid var(--line);margin-top:26px}
-  .f-title{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;
-    color:var(--muted);margin-bottom:8px}
-  .f-list{list-style:none;margin:0;padding:0;display:grid;gap:6px 22px;
-    grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
-  .f-list li{position:relative;padding-left:14px}
-  .f-list li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;
-    border-radius:50%;background:var(--line)}
+
 
   /* ==== АДАПТИВ · узкие экраны ================================================ */
   @media(max-width:1023px){ .weekpick{max-width:none} }
@@ -990,7 +982,6 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
       <button type="button" id="reset-inline" class="linkbtn">Сбросить</button>
     </div></div>
     <main class="wrap"><div id="content"></div></main>
-    <div class="wrap"><footer id="footer"></footer></div>
   </div>
   </div>
 </div>
@@ -1617,35 +1608,6 @@ function fillPicker(){
   sel.style.paddingRight=(document.querySelector(".wsel-end").offsetWidth+14)+"px";
 }
 
-/* Инфо-блок из шапки исходной таблицы: режем сплошной текст на отдельные факты.
-   Адрес выкидываем — студенты и так знают, где учатся. */
-function renderFooter(){
-  // Пары скрыты — скрыты и пояснения к ним: чётность недель и праздники это
-  // расписание группы, к своим записям они отношения не имеют.
-  if(!st.uni){ $("footer").innerHTML=""; return; }
-  const raw=(DATA.notes||[]).filter(Boolean).join(" ").replace(/\s+/g," ").trim();
-  const items=raw
-    .split(/Прим\.\s*\d+:\s*/)
-    .flatMap(part=>part.split(/(?<=\.)\s+(?=[А-ЯЁA-Z])/))
-    // «Нечётная — с …, чётная — с …» это два факта, а не один: разносим по пунктам
-    .flatMap(x=>x.split(/,\s+(?=(?:чётная|нечётная|неделя)\b)/i))
-    .map(x=>x.trim().replace(/\s*\.\s*$/,""))
-    .map(x=>x?x.charAt(0).toUpperCase()+x.slice(1):x)
-    .filter(Boolean)
-    .filter(x=>!/Финуниверситета|Партизанская/i.test(x))
-    // это сайт показывает сам: время уже проставлено в расписании,
-    // а расхождение по дню видно заметкой у самого занятия
-    .filter(x=>!/указано внутри ячейки|исходном PDF|оставлено как в оригинале/i.test(x));
-  // Считаем занятия с заметками — и говорим, где их искать.
-  let noted=0;
-  DATA.weeks.forEach(w=>w.days.forEach(d=>d.pairs.forEach(p=>
-    p.lessons.forEach(l=>{if(l.note)noted++;}))));
-  if(noted)items.push("у отдельных пар есть заметка со значком — нажми на неё, "
-    +"чтобы прочитать целиком (сейчас таких пар: "+noted+")");
-  $("footer").innerHTML=`<div class="f-title">Про это расписание</div>
-    <ul class="f-list">${items.map(t=>`<li>${esc(t)}</li>`).join("")}</ul>`;
-}
-
 /* ==== ОТРИСОВКА · попап дня ================================================= */
 function openDay(wi,di){st.pop=[wi,di];save();renderDay();}
 function closeDay(){st.pop=null;save();renderDay();}
@@ -1993,7 +1955,6 @@ function restoreInputs(){
   syncPeriodInputs();
   document.querySelectorAll("#f-teacher-list input").forEach(cb=>cb.checked=st.fTeachers.includes(cb.value));
   syncTeacherBtn();
-  renderFooter();
 }
 
 /* Кнопка «назад» возвращает к прошлому виду, неделе или дню, а не уводит с сайта. */
@@ -2534,7 +2495,6 @@ function schedulePlaceholder(text){
   if(c)c.innerHTML='<div class="emptystate"><div class="big">'
     +'<svg class="ic" aria-hidden="true"><use href="#i-cloudsun"/></svg></div>'+text+'</div>';
   const legend=$("legend"); if(legend)legend.innerHTML="";
-  const footer=$("footer"); if(footer)footer.innerHTML="";
   document.documentElement.classList.remove("preload");
 }
 function dataLooksValid(d){
