@@ -696,19 +696,21 @@ async function decryptIndex(blob){
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
-// Ключ переживает перезагрузку, но не закрытие вкладки. Кладём ключ, а не
-// пароль: пароль после входа нигде не остаётся.
+// Ключ живёт в localStorage: пароль вводится один раз на устройстве и держится,
+// пока не почистить данные сайта. Кладём именно ключ, а не пароль — сам пароль
+// после входа нигде не остаётся. Размен понятный: кто дошёл до разблокированного
+// браузера, откроет расписание, но он и пароль оттуда достанет не сложнее.
 async function rememberKey(salt){
-  sessionStorage.setItem(SESSION_KEY, b64(await crypto.subtle.exportKey('raw', cryptoKey)));
-  sessionStorage.setItem(SESSION_SALT, salt);
+  localStorage.setItem(SESSION_KEY, b64(await crypto.subtle.exportKey('raw', cryptoKey)));
+  localStorage.setItem(SESSION_SALT, salt);
 }
 async function restoreKey(){
-  const raw = sessionStorage.getItem(SESSION_KEY);
+  const raw = localStorage.getItem(SESSION_KEY);
   if (!raw) return false;
   cryptoKey = await crypto.subtle.importKey('raw', unb64(raw), 'AES-GCM', true, ['encrypt', 'decrypt']);
   const index = await fetchJSON(INDEX_URL);
   // Файлы перевыпустили с другой солью — старый ключ к ним уже не подойдёт.
-  if (index && index.salt !== sessionStorage.getItem(SESSION_SALT)) return false;
+  if (index && index.salt !== localStorage.getItem(SESSION_SALT)) return false;
   return openMine(index);
 }
 
@@ -873,7 +875,6 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
 
     <div class="side-h">Период поиска</div>
     <div class="side-field">
-      <label>Свой период</label>
       <div class="daterange">
         <input id="from" type="date" aria-label="Начало периода" />
         <span class="dr-sep">–</span>
@@ -1764,9 +1765,14 @@ function bindGrid(){
 }
 
 /* Возврат значений в поля из состояния. */
+// input type=date понимает только ГГГГ-ММ-ДД.
+function isoDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
 function restoreInputs(){
   $("q").value=st.term;$("f-day").value=st.fDay;$("f-type").value=st.fType;
-  $("from").value=st.from;$("to").value=st.to;
+  // Свой период не задан — показываем в полях тот, что и так открыт: пустые поля
+  // рядом с непустым расписанием читаются как «период не выбран».
+  if(st.from||st.to){ $("from").value=st.from; $("to").value=st.to; }
+  else{ const[a,z]=currentRange(); $("from").value=isoDate(a); $("to").value=isoDate(z); }
   document.querySelectorAll("#f-teacher-list input").forEach(cb=>cb.checked=st.fTeachers.includes(cb.value));
   syncTeacherBtn();
   renderFooter();
