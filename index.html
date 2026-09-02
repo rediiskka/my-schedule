@@ -465,8 +465,6 @@
      по категории, а не по подгруппе; чекбокс и клик по карточке открывают форму. */
   .lesson.task{cursor:pointer}
   .lesson.task.task-done .subj{text-decoration:line-through;opacity:.6}
-  .task-check-wrap{flex:none;display:flex;align-items:center}
-  .task-check-wrap input{width:20px;height:20px;cursor:pointer;accent-color:var(--blue)}
   #taskForm textarea.ctl{height:auto;min-height:64px;padding:8px 10px;resize:vertical}
   #taskForm .side-row{margin-top:12px}
 
@@ -624,66 +622,86 @@ async function sha256Hex(text){
 function hideGate(){ document.getElementById('gate').hidden = true; }
 
 /* ==== ШИФРОВАНИЕ ЗАДАЧ =======================================================
-   Пароль открывает не только вход, но и сами задачи: из него выводится ключ
-   AES-GCM, которым шифруется всё, что уходит в localStorage. Без пароля там
-   лежит шифротекст — открыв devtools на чужом ноутбуке, задачи не прочитать.
-   Соль хранится открыто: она не секрет, её дело — чтобы одинаковые пароли
-   на разных машинах давали разные ключи. */
-const SALT_KEY = 'schedule.salt';
+   Пароль открывает и вход, и сами задачи: из него выводится ключ AES-GCM,
+   которым зашифрован tasks.json в репозитории. Файл публичный, но без пароля
+   это набор одинаковых блоков — ни времени, ни числа дел из него не достать.
+
+   Соль лежит в самом файле, а не в браузере: иначе на втором устройстве
+   вывелся бы другой ключ и файл не открылся бы. Отсюда порядок: пароль ->
+   тянем файл -> берём соль -> выводим ключ -> расшифровываем фрагменты. */
 const SESSION_KEY = 'schedule.key';
+const SESSION_SALT = 'schedule.salt';
 let cryptoKey = null;
+let TASKS_FILE = null;
 
 const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
 const unb64 = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
 
-function getSalt(){
-  let saved = localStorage.getItem(SALT_KEY);
-  if (!saved) { saved = b64(crypto.getRandomValues(new Uint8Array(16))); localStorage.setItem(SALT_KEY, saved); }
-  return unb64(saved);
+// Нет файла — просто нет задач: сайт остаётся обычным расписанием.
+// Кэш обходим начисто: файл правится и приезжает коммитом, а закэшированный
+// ответ (в том числе прошлый 404) означал бы «задачи пропали» на ровном месте.
+async function fetchTasksFile(){
+  try{
+    const r = await fetch(TASKS_URL, { cache: 'reload' });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data && data.salt && Array.isArray(data.items) ? data : null;
+  }catch(e){
+    console.error('Файл задач не загрузился:', e);
+    return null;
+  }
 }
 
-// 150000 итераций: для входа это незаметные доли секунды, для перебора паролей —
-// множитель, из-за которого перебор перестаёт быть мгновенным.
-async function deriveKey(password){
+// 150000 итераций: для входа это незаметные доли секунды, а перебор пароля по
+// скачанному файлу упирается в тот же множитель.
+async function deriveKey(password, salt){
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: getSalt(), iterations: 150000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' },
     base, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
 }
 
-// Свой вектор на каждую запись — иначе повторное шифрование тем же ключом
-// выдаёт, что данные не менялись.
-async function encryptJSON(value){
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, new TextEncoder().encode(JSON.stringify(value)));
-  return JSON.stringify({ iv: b64(iv), ct: b64(ct) });
-}
-
-async function decryptJSON(text){
-  const { iv, ct } = JSON.parse(text);
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv) }, cryptoKey, unb64(ct));
-  return JSON.parse(new TextDecoder().decode(plain));
+// Фрагмент — base64 от вектора и шифротекста подряд. Внутри блок постоянной
+// длины: два байта настоящего размера, дальше сам json и добивка нулями.
+async function decryptFragment(fragment){
+  const blob = unb64(fragment);
+  const plain = new Uint8Array(await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: blob.slice(0, 12) }, cryptoKey, blob.slice(12)));
+  const size = (plain[0] << 8) | plain[1];
+  if (!size) return null;
+  return JSON.parse(new TextDecoder().decode(plain.slice(2, 2 + size)));
 }
 
 // Ключ переживает перезагрузку страницы, но не закрытие вкладки. Кладём именно
 // ключ, а не пароль: пароль после входа нигде не остаётся, и перевыводить его
 // через PBKDF2 на каждый F5 не приходится.
-async function rememberKey(){
+async function rememberKey(salt){
   sessionStorage.setItem(SESSION_KEY, b64(await crypto.subtle.exportKey('raw', cryptoKey)));
+  sessionStorage.setItem(SESSION_SALT, b64(salt));
 }
 async function restoreKey(){
   const raw = sessionStorage.getItem(SESSION_KEY);
   if (!raw) return false;
   cryptoKey = await crypto.subtle.importKey('raw', unb64(raw), 'AES-GCM', true, ['encrypt', 'decrypt']);
+  TASKS_FILE = await fetchTasksFile();
+  // Файл перевыпустили с другой солью — старый ключ к нему уже не подойдёт.
+  if (TASKS_FILE && TASKS_FILE.salt !== sessionStorage.getItem(SESSION_SALT)) return false;
   return true;
+}
+
+// Вход: хэш только пускает внутрь, ключ выводится из того же пароля и соли файла.
+async function unlock(password){
+  TASKS_FILE = await fetchTasksFile();
+  const salt = TASKS_FILE ? unb64(TASKS_FILE.salt) : crypto.getRandomValues(new Uint8Array(16));
+  cryptoKey = await deriveKey(password, salt);
+  await rememberKey(salt);
 }
 document.getElementById('gateForm').addEventListener('submit', async e => {
   e.preventDefault();
   const input = document.getElementById('gateInput');
   const hash = await sha256Hex(input.value);
   if (hash === PASSWORD_HASH) {
-    cryptoKey = await deriveKey(input.value);
-    await rememberKey();
+    await unlock(input.value);
     hideGate();
     boot();
   } else {
@@ -735,8 +753,6 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3" fill="var(--blue-soft)" stroke="var(--blue-ink)"/><circle cx="8.5" cy="10" r="1.6" fill="var(--gold)" stroke="none"/><path d="M4.5 17l4.5-4.5 3.5 3.5 2.5-2.5 4.5 4" stroke="var(--blue-ink)"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="var(--blue-soft)" stroke="var(--blue-ink)"/><path d="M12 11v5" stroke="var(--blue-ink)"/><path d="M12 7.8h.01" stroke="var(--blue-ink)" stroke-width="2.4"/></symbol>
   <symbol id="i-thermo" viewBox="0 0 24 24"><path d="M13.5 14.2V5.5a2 2 0 1 0-4 0v8.7a4 4 0 1 0 4 0z" fill="var(--pink-soft)" stroke="var(--pink-ink)"/></symbol>
-  <symbol id="i-export" viewBox="0 0 24 24"><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" fill="var(--mint-soft)" stroke="var(--mint-ink)"/><path d="M12 4v10" stroke="var(--mint-ink)"/><path d="M8.5 10.5L12 14l3.5-3.5" stroke="var(--mint-ink)"/></symbol>
-  <symbol id="i-import" viewBox="0 0 24 24"><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" fill="var(--lav-soft)" stroke="var(--lav-ink)"/><path d="M12 14V4" stroke="var(--lav-ink)"/><path d="M8.5 7.5L12 4l3.5 3.5" stroke="var(--lav-ink)"/></symbol>
 </svg>
 <script>
 /* Раскладка решается ДО первой отрисовки: скрипт страницы стоит в конце,
@@ -834,16 +850,6 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
       <button id="share" class="actbtn" title="Скопировать ссылку на текущий вид с фильтрами"><svg class="ic" aria-hidden="true"><use href="#i-link"/></svg> Поделиться</button>
     </div>
 
-    <div class="side-h">Мои задачи</div>
-    <button id="addTask" class="side-btn" type="button">
-      <svg class="ic" aria-hidden="true"><use href="#i-star"/></svg> Добавить задачу</button>
-    <div class="side-row" style="margin-top:6px">
-      <button id="exportTasks" class="actbtn" type="button" title="Сохранить задачи в файл — резервная копия на случай забытого пароля">
-        <svg class="ic" aria-hidden="true"><use href="#i-export"/></svg> Экспорт</button>
-      <button id="importTasks" class="actbtn" type="button" title="Загрузить задачи из файла">
-        <svg class="ic" aria-hidden="true"><use href="#i-import"/></svg> Импорт</button>
-    </div>
-    <input id="importTasksInput" type="file" accept="application/json,.json" hidden />
 
     <div class="segrow">
       <span class="seg-lab">Меню</span>
@@ -903,44 +909,6 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
       <button id="daypop-x" class="wnav" aria-label="Закрыть"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
     <div id="daypop-body" class="pop-body"></div>
-  </div>
-</div>
-
-<div id="taskpop" class="pop hidden" role="dialog" aria-modal="true" aria-labelledby="taskpop-t">
-  <div class="pop-card">
-    <div class="pop-head">
-      <div id="taskpop-t" class="pop-title">Новая задача</div>
-      <button id="taskpop-x" class="wnav" aria-label="Закрыть"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
-    </div>
-    <div class="pop-body">
-      <form id="taskForm">
-        <div class="side-field"><label for="tf-title">Название</label>
-          <input id="tf-title" class="ctl" type="text" required maxlength="120" /></div>
-        <div class="fgrid">
-          <div class="side-field"><label for="tf-date">Дата</label>
-            <input id="tf-date" class="ctl" type="date" required /></div>
-          <div class="side-field"><label for="tf-time">Время</label>
-            <input id="tf-time" class="ctl" type="time" /></div>
-        </div>
-        <div class="fgrid">
-          <div class="side-field"><label for="tf-duration">Минут</label>
-            <input id="tf-duration" class="ctl" type="number" min="5" step="5" placeholder="60" /></div>
-          <div class="side-field"><label for="tf-category">Категория</label>
-            <select id="tf-category" class="ctl">
-              <option value="study">Учёба</option>
-              <option value="work">Работа</option>
-              <option value="personal">Личное</option>
-              <option value="other">Другое</option>
-            </select></div>
-        </div>
-        <div class="side-field"><label for="tf-note">Заметка</label>
-          <textarea id="tf-note" class="ctl" maxlength="500"></textarea></div>
-        <div class="side-row">
-          <button id="tf-delete" type="button" class="actbtn danger" hidden><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg> Удалить</button>
-          <button type="submit" class="actbtn">Сохранить</button>
-        </div>
-      </form>
-    </div>
   </div>
 </div>
 
@@ -1062,11 +1030,17 @@ function todayWeek(){const now=new Date();for(let i=0;i<DATA.weeks.length;i++){c
   if(!a)continue;if(now<=eod(z))return i;}return DATA.weeks.length-1;}
 
 /* ==== ЛИЧНЫЕ ЗАДАЧИ ==========================================================
-   Пары приходят из data.json (публичное расписание группы). Личные задачи —
-   отдельный слой поверх них: хранятся только в localStorage этого браузера
-   и никогда не коммитятся в git. Совмещаются с парами по дате при отрисовке
+   Пары приходят из data.json (публичное расписание группы), задачи — из
+   tasks.json рядом в репозитории, зашифрованного паролем. Сайт их только
+   читает: Pages отдаёт статику, писать в репозиторий отсюда нельзя, и задача,
+   заведённая в браузере, осталась бы в одном этом браузере. Файл правит
+   утилита tools/vault.py, результат приезжает обычным коммитом.
+
+   Внутри файла — фрагменты, по одному на задачу, все одной длины: новый пункт
+   дописывается строкой, а со стороны не видно ни сколько задач, ни насколько
+   они подробные. С парами задачи совмещаются по дате при отрисовке
    (dayHTML/renderWeek/renderMonth), не трогая логику самих пар. */
-const TASK_KEY="schedule.tasks.v1";
+const TASKS_URL="tasks.json";
 const TASK_CAT={
   study:{label:"Учёба",color:"var(--blue)"},
   work:{label:"Работа",color:"var(--gold)"},
@@ -1074,56 +1048,20 @@ const TASK_CAT={
   other:{label:"Другое",color:"var(--lav)"},
 };
 let TASKS=[];
-// Задачи лежат зашифрованными (см. блок шифрования в скрипте пароля), поэтому
-// чтение и запись асинхронные — и всё, что их дёргает, тоже.
+
+// Расшифровка всего файла — единицы миллисекунд даже на тысячах пунктов,
+// поэтому никакого указателя по датам нет: он и был бы графиком наружу.
 async function loadTasks(){
-  const raw=localStorage.getItem(TASK_KEY);
-  if(!raw){TASKS=[];return;}
-  try{
-    // Массивом лежат задачи, заведённые до появления шифрования: подхватываем
-    // их и тут же перекладываем в шифротекст, иначе они пропали бы молча.
-    const parsed=JSON.parse(raw);
-    if(Array.isArray(parsed)){TASKS=parsed;await saveTasks();return;}
-    TASKS=await decryptJSON(raw)||[];
-  }catch(e){
-    console.error("Задачи не расшифровались:",e);
-    TASKS=[];
+  TASKS=[];
+  if(!TASKS_FILE||!Array.isArray(TASKS_FILE.items))return;
+  for(const fragment of TASKS_FILE.items){
+    let task;
+    try{ task=await decryptFragment(fragment); }
+    catch(e){ console.error("Фрагмент не расшифровался:",e); continue; }
+    if(task&&task.title&&task.date)TASKS.push(task);   // добивочные пустышки дают null
   }
 }
-async function saveTasks(){localStorage.setItem(TASK_KEY,await encryptJSON(TASKS));}
-
-/* Бэкап задач обычным читаемым JSON. Это осознанная страховка, а не дыра:
-   зашифрованное хранилище без пароля не открыть в принципе, и забытый пароль
-   означал бы потерю всех задач. С файлом можно завести новый пароль и вернуть
-   их обратно. Файл лежит у Вики на диске и в репозиторий не попадает. */
-function exportTasks(){
-  const blob=new Blob([JSON.stringify({tasks:TASKS,exportedAt:new Date().toISOString()},null,2)],{type:"application/json"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download=`задачи-${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-// Импорт заменяет список целиком, а не подмешивает: файл — это снимок, и слияние
-// по id дало бы наполовину старое состояние, которое потом не объяснить.
-async function importTasks(file){
-  const parsed=JSON.parse(await file.text());
-  const list=Array.isArray(parsed)?parsed:parsed.tasks;
-  if(!Array.isArray(list))throw new Error("в файле нет списка задач");
-  TASKS=list.filter(t=>t&&t.title&&t.date).map(t=>({
-    id:t.id||crypto.randomUUID(),
-    title:String(t.title),
-    date:String(t.date),
-    time:t.time||"",
-    duration:t.duration?Number(t.duration):null,
-    category:TASK_CAT[t.category]?t.category:"other",
-    note:t.note||"",
-    done:!!t.done,
-  }));
-  await saveTasks();render();
-  return TASKS.length;
-}
-// Пары датированы строкой "ДД.ММ.ГГГГ", задачи — ISO из <input type=date>.
+// Пары датированы строкой "ДД.ММ.ГГГГ", задачи — ISO.
 function ruToIso(ru){const m=/^(\d{2})\.(\d{2})\.(\d{4})/.exec(ru||"");return m?`${m[3]}-${m[2]}-${m[1]}`:"";}
 function taskMatch(t){const hay=(t.title+" "+(t.note||"")).toLowerCase();return hay.includes(st.term);}
 function tasksForRu(ru){
@@ -1131,13 +1069,6 @@ function tasksForRu(ru){
   return TASKS.filter(t=>t.date===iso).filter(t=>!st.term||taskMatch(t))
     .sort((a,b)=>(a.time||"").localeCompare(b.time||"")||a.title.localeCompare(b.title,"ru"));
 }
-async function upsertTask(task){
-  const i=TASKS.findIndex(t=>t.id===task.id);
-  if(i===-1)TASKS.push(task);else TASKS[i]=task;
-  await saveTasks();render();
-}
-async function deleteTask(id){TASKS=TASKS.filter(t=>t.id!==id);await saveTasks();render();}
-async function toggleTaskDone(id){const t=TASKS.find(t=>t.id===id);if(t){t.done=!t.done;await saveTasks();render();}}
 
 /* ==== ФИЛЬТРЫ =============================================================== */
 // Сайт личный — своя подгруппа зашита здесь, а не выбирается в меню.
@@ -1245,9 +1176,8 @@ function taskChipHTML(t){
 // категории вместо подгруппы (--stripe работает одинаково в обоих случаях).
 function taskCardHTML(t){
   const cat=TASK_CAT[t.category];
-  return `<div class="lesson task${t.done?" task-done":""}" style="--stripe:${cat.color}" data-task-id="${t.id}">
+  return `<div class="lesson task${t.done?" task-done":""}" style="--stripe:${cat.color}">
     <div class="row">
-      <label class="task-check-wrap"><input type="checkbox" data-task-toggle="${t.id}" ${t.done?"checked":""} aria-label="Выполнено"></label>
       <div class="linfo">
         <div class="l-head">${t.time?`<span class="l-time">${esc(t.time)}</span>`:""}<span class="pill" style="background:${cat.color}">${cat.label}</span></div>
         <div class="subj">${hl(t.title)}</div>
@@ -1713,74 +1643,6 @@ function bindGrid(){
   addEventListener("keydown",e=>{if(e.key==="Escape")closeDay();});
 }
 
-/* ==== ЛИЧНЫЕ ЗАДАЧИ · форма и клики ========================================= */
-let editingTaskId=null;
-function todayIso(){const d=new Date();
-  return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
-function openTaskForm(task){
-  editingTaskId=task?task.id:null;
-  $("taskpop-t").textContent=task?"Изменить задачу":"Новая задача";
-  $("tf-title").value=task?task.title:"";
-  $("tf-date").value=task?task.date:todayIso();
-  $("tf-time").value=task?(task.time||""):"";
-  $("tf-duration").value=task?(task.duration||""):"";
-  $("tf-category").value=task?task.category:"study";
-  $("tf-note").value=task?(task.note||""):"";
-  $("tf-delete").hidden=!task;
-  $("taskpop").classList.remove("hidden");
-  $("tf-title").focus();
-}
-function closeTaskForm(){$("taskpop").classList.add("hidden");}
-function bindTasks(){
-  $("addTask").onclick=()=>openTaskForm(null);
-  $("exportTasks").onclick=exportTasks;
-  $("importTasks").onclick=()=>$("importTasksInput").click();
-  $("importTasksInput").onchange=async e=>{
-    const file=e.target.files[0];
-    if(!file)return;
-    try{
-      const n=await importTasks(file);
-      alert(`Загружено задач: ${n}`);
-    }catch(err){
-      console.error("Импорт не удался:",err);
-      alert("Не получилось прочитать файл: "+err.message);
-    }
-    // сбрасываем, иначе повторный выбор того же файла не даст события
-    e.target.value="";
-  };
-  $("taskpop-x").onclick=closeTaskForm;
-  $("taskpop").onclick=e=>{if(e.target===$("taskpop"))closeTaskForm();};
-  $("taskForm").onsubmit=async e=>{
-    e.preventDefault();
-    const prev=editingTaskId?TASKS.find(t=>t.id===editingTaskId):null;
-    const task={
-      id:editingTaskId||crypto.randomUUID(),
-      title:$("tf-title").value.trim(),
-      date:$("tf-date").value,
-      time:$("tf-time").value,
-      duration:$("tf-duration").value?Number($("tf-duration").value):null,
-      category:$("tf-category").value,
-      note:$("tf-note").value.trim(),
-      done:prev?prev.done:false,
-    };
-    if(!task.title||!task.date)return;
-    await upsertTask(task);
-    closeTaskForm();
-  };
-  $("tf-delete").onclick=async()=>{
-    if(editingTaskId&&confirm("Удалить эту задачу?")){await deleteTask(editingTaskId);closeTaskForm();}
-  };
-  // Делегирование одним слушателем на весь документ: карточки задач есть
-  // и в #content (список), и в #daypop-body (попап дня) — оба места разом.
-  document.addEventListener("click",e=>{
-    const toggle=e.target.closest("[data-task-toggle]");
-    if(toggle){toggleTaskDone(toggle.dataset.taskToggle);return;}
-    const card=e.target.closest(".lesson.task");
-    if(card){const t=TASKS.find(x=>x.id===card.dataset.taskId);if(t)openTaskForm(t);}
-  });
-  addEventListener("keydown",e=>{if(e.key==="Escape")closeTaskForm();});
-}
-
 /* Возврат значений в поля из состояния. */
 function restoreInputs(){
   $("q").value=st.term;$("f-day").value=st.fDay;$("f-type").value=st.fType;
@@ -1814,7 +1676,6 @@ function initControls(){
   bindShare();
   bindPNG();
   bindGrid();
-  bindTasks();
   bindHistory();
   bindNavDismiss();
   restoreInputs();
