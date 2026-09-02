@@ -485,6 +485,36 @@
   .loose-item{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13px;
     background:color-mix(in srgb,var(--pink-soft) 55%,var(--panel));border-radius:999px;padding:3px 10px}
   .loose-item.auto{border:1px dashed var(--pink-ink)}
+
+  /* ==== ВИД: ЦЕЛИ ============================================================= */
+  /* Целей много и они разной крупности, поэтому не список, а сетка карточек:
+     глаз ловит группу целиком, а не читает пятьдесят строк подряд. */
+  .goals-head{display:flex;align-items:baseline;gap:12px;margin-bottom:18px}
+  .goals-count{font-weight:700;font-size:15px}
+  .goals-waiting{font-size:12.5px;color:var(--pink-ink);background:var(--pink-soft);
+    border-radius:999px;padding:2px 10px;font-weight:600}
+  .goals-block{margin-bottom:26px}
+  .goals-title{display:flex;align-items:center;gap:10px;font-size:13px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 12px}
+  .goals-num{font-size:11px;background:var(--panel-2);border-radius:999px;padding:1px 8px;
+    letter-spacing:0}
+  .goals-tag{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px}
+  .goals-tag .tag{margin-top:6px;flex:none}
+  .goals-items{display:grid;gap:8px;flex:1;
+    grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+  .goal{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:10px 12px;box-shadow:0 2px 10px rgba(90,70,100,.05)}
+  /* Ждёт разбора — пунктир: то же различие, что у времени, поставленного самим. */
+  .goal.waiting{border-style:dashed;background:color-mix(in srgb,var(--pink-soft) 22%,var(--panel))}
+  .goal-row{display:flex;align-items:baseline;gap:8px;justify-content:space-between}
+  .goal-name{font-weight:600;font-size:13.5px;line-height:1.3}
+  .goal-when{font-size:11px;color:var(--muted);white-space:nowrap}
+  .goal-note{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4}
+  .goal-foot{display:flex;gap:8px;align-items:center;margin-top:7px}
+  .goal-flag{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--pink-ink)}
+  .goal-flag.done{color:var(--mint-ink)}
+  .goal-grown{font-size:11px;color:var(--muted)}
   .pill.auto-pill{background:transparent;color:var(--muted);border:1px dashed var(--line)}
   .lesson.task.auto{border-style:dashed}
   .lesson.task.clash{outline:2px solid var(--now);outline-offset:-2px}
@@ -903,6 +933,7 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
         <button type="button" data-view="list">Список</button>
         <button type="button" data-view="week">Неделя</button>
         <button type="button" data-view="month">Месяц</button>
+        <button type="button" data-view="goals">Цели</button>
       </div>
     </div>
 
@@ -981,6 +1012,7 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
           <button type="button" data-view="list">Список</button>
           <button type="button" data-view="week">Неделя</button>
           <button type="button" data-view="month">Месяц</button>
+        <button type="button" data-view="goals">Цели</button>
         </div>
         <button id="burger" class="wnav" aria-label="Открыть меню"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></button>
       </div>
@@ -1432,6 +1464,56 @@ function dayHTML(wi,w,di,d){
 /* ==== ОТРИСОВКА · список, неделя, месяц ===================================== */
 // Дела, у которых есть срок, но нет дня: показываются шапкой над списком, чтобы
 // не забылись — в сетку их положить некуда.
+// Русские числительные: «44 цели», а не «44 целей».
+function plural(n,one,few,many){
+  const mod10=n%10, mod100=n%100;
+  const word=(mod10===1&&mod100!==11)?one:(mod10>=2&&mod10<=4&&(mod100<12||mod100>14))?few:many;
+  return `${n} ${word}`;
+}
+
+// Экран целей: всё, у чего нет дня и часа. Группируем по горизонту — от «без
+// срока» к «на неделе», внутри по меткам: так видно, чего в жизни много, а чего
+// нет вовсе.
+function renderGoals(){
+  const loose=MY.filter(r=>!isDated(r));
+  if(!loose.length)return `<div class="emptystate"><div class="big"><svg class="ic" aria-hidden="true"><use href="#i-flower"/></svg></div>Целей пока нет. Дело без даты — уже цель.</div>`;
+
+  const order=[["season","Без срока"],["month","В этом месяце"],["week","На этой неделе"]];
+  const waiting=loose.filter(r=>(r.tags||[]).includes("разобрать")).length;
+  let html=`<div class="goals-head"><span class="goals-count">${plural(loose.length,"цель","цели","целей")} и дел без даты</span>`
+    +(waiting?`<span class="goals-waiting">${waiting} ждёт разбора</span>`:"")+`</div>`;
+
+  order.forEach(([horizon,title])=>{
+    const group=loose.filter(r=>r.horizon===horizon);
+    if(!group.length)return;
+    // Внутри горизонта — по меткам: метка отвечает на вопрос «это про что».
+    const byTag={};
+    group.forEach(r=>{
+      const key=(r.tags||[]).filter(t=>t!=="разобрать")[0]||"без метки";
+      (byTag[key]=byTag[key]||[]).push(r);
+    });
+    html+=`<section class="goals-block"><h2 class="goals-title">${title}<span class="goals-num">${group.length}</span></h2>`;
+    Object.keys(byTag).sort((a,b)=>a.localeCompare(b,"ru")).forEach(tag=>{
+      html+=`<div class="goals-tag"><span class="tag">#${esc(tag)}</span><div class="goals-items">`
+        +byTag[tag].map(r=>goalCardHTML(r)).join("")+`</div></div>`;
+    });
+    html+=`</section>`;
+  });
+  return html;
+}
+
+function goalCardHTML(r){
+  const waiting=(r.tags||[]).includes("разобрать");
+  const period=r.period?`<span class="goal-when">${esc(r.period.replace(/\.\d{4}/g,""))}</span>`:"";
+  const grown=MY.filter(x=>x.parent===r.id).length;
+  return `<div class="goal${waiting?" waiting":""}">
+    <div class="goal-row"><span class="goal-name">${hl(r.subject)}</span>${period}</div>
+    ${r.note?`<div class="goal-note">${hl(r.note)}</div>`:""}
+    <div class="goal-foot">${waiting?`<span class="goal-flag">ждёт разбора</span>`:`<span class="goal-flag done">разложено</span>`}`
+    +`${grown?`<span class="goal-grown">из неё: ${grown}</span>`:""}</div>
+  </div>`;
+}
+
 function spanBanner(){
   const[a,z]=currentRange();
   const loose=MY.filter(r=>!isDated(r)).filter(r=>{
@@ -1452,7 +1534,7 @@ function spanBanner(){
 }
 
 function renderList(){
-  const[from,to]=currentRange();const multi=st.scope!=="week";let html=spanBanner(),found=!!html;
+  const[from,to]=currentRange();const multi=st.scope!=="week";let html="",found=false;
   DATA.weeks.forEach((w,wi)=>{
     let inner="";
     w.days.forEach((d,di)=>{if(!d._dt||d._dt<from||d._dt>to)return;inner+=dayHTML(wi,w,di,d);});
@@ -1706,9 +1788,11 @@ function fillPicker(){
     // Показано может быть несколько недель — подпись говорит про то, что открыто,
     // а не про ту неделю, что стоит в селекторе.
     const[a,z]=currentRange();
-    $("range-sub").textContent=st.scope==="week"
-      ? "Неделя "+(st.cur+1)+" · "+weekRange(st.cur)
-      : a.toLocaleDateString("ru-RU")+" – "+z.toLocaleDateString("ru-RU");
+    $("range-sub").textContent=st.view==="goals"
+      ? "Цели и дела без даты"
+      : st.scope==="week"
+        ? "Неделя "+(st.cur+1)+" · "+weekRange(st.cur)
+        : a.toLocaleDateString("ru-RU")+" – "+z.toLocaleDateString("ru-RU");
   }
   sel.style.paddingRight=(document.querySelector(".wsel-end").offsetWidth+14)+"px";
 }
@@ -1762,7 +1846,10 @@ function render(){
   syncPeriodInputs();          // поля периода показывают то, что открыто сейчас
   fillTagFilter();
   const c=$("content");
-  if(st.view==="list"){c.innerHTML=renderList();scrollToToday();}
+  const goalsView=st.view==="goals";
+  document.getElementById("legend").hidden=goalsView;
+  if(goalsView){c.innerHTML=renderGoals();}
+  else if(st.view==="list"){c.innerHTML=renderList();scrollToToday();}
   else if(st.view==="week"){c.innerHTML=renderWeek();centerToday();}
   else{c.innerHTML=renderMonth();centerToday();}
   fillPicker();
