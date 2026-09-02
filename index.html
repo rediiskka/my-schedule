@@ -407,6 +407,17 @@
   .lesson.sgtint0{--stripe:var(--sg0)}
   .lesson.sgtint2,.cols .sgcol.sgtint2,.wk td.c.sgtint2,.mcell.sgtint2{
     background:color-mix(in srgb,var(--sg2) var(--sg-strength),var(--panel))}
+  /* Своё — третья заливка рядом с подгруппами: розовая, чтобы отличалась от
+     учебного одним взглядом. День со своей записью подкрашен так же — иначе
+     при скрытых парах сетка становится белой и пустой. */
+  .lesson.task,.wk td.c.mine-tint,.mcell.mine-tint{
+    background:color-mix(in srgb,var(--pink-soft) var(--sg-strength),var(--panel))}
+  /* А когда пары видны, ячейка уже покрашена по подгруппе. Мешать два цвета в
+     градиент — каша, поэтому своё отмечается полосой по нижнему краю: она
+     ложится поверх любой заливки и читается отдельно от неё. */
+  .wk td.c.has-mine,.mcell.has-mine{position:relative}
+  .wk td.c.has-mine::after,.mcell.has-mine::after{content:"";position:absolute;
+    left:0;right:0;bottom:0;height:3px;background:var(--pink-ink);opacity:.8}
 
   /* ==== ВИД: НЕДЕЛЯ =========================================================== */
   /* week grid */
@@ -455,18 +466,17 @@
   .msg{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;flex:none;
     border-radius:50%;font-size:8.5px;font-weight:800;color:var(--on-accent)}
   .msg.sg2{background:var(--sg2)}
+  .mine-mark{width:13px;height:13px;flex:none;vertical-align:-2px}
+  .pill.mine-pill{display:inline-flex;align-items:center;gap:4px;
+    background:var(--pink-soft);color:var(--pink-ink)}
 
   /* ==== ЗАЛИВКА ПО ПОДГРУППАМ · общая ========================================= */
   .sgtint0{--stripe:var(--sg0)}
   .sgtint2{--stripe:var(--sg2)}
 
   /* ==== ЛИЧНЫЕ ЗАДАЧИ ========================================================== */
-  /* Карточка задачи — та же .lesson, полоска слева через --stripe красит её
-     по категории, а не по подгруппе; чекбокс и клик по карточке открывают форму. */
-  .lesson.task{cursor:pointer}
-  .lesson.task.task-done .subj{text-decoration:line-through;opacity:.6}
-  #taskForm textarea.ctl{height:auto;min-height:64px;padding:8px 10px;resize:vertical}
-  #taskForm .side-row{margin-top:12px}
+  /* Своя запись — та же .lesson: полоска слева через --stripe красит её по типу,
+     а розовая заливка выше говорит, что запись моя, а не из расписания группы. */
 
   /* ==== ПОПАП ДНЯ ============================================================= */
   /* попап дня — открывается кликом по ячейке в месяце и в неделе */
@@ -782,6 +792,7 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
     <path d="M5 18h6M13.5 18h5.5M7.5 21h9" stroke="var(--grey-ink)"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3" fill="var(--blue-soft)" stroke="var(--blue-ink)"/><circle cx="8.5" cy="10" r="1.6" fill="var(--gold)" stroke="none"/><path d="M4.5 17l4.5-4.5 3.5 3.5 2.5-2.5 4.5 4" stroke="var(--blue-ink)"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="var(--blue-soft)" stroke="var(--blue-ink)"/><path d="M12 11v5" stroke="var(--blue-ink)"/><path d="M12 7.8h.01" stroke="var(--blue-ink)" stroke-width="2.4"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-9.2A4 4 0 0 1 12 8a4 4 0 0 1 7 2.8C19 15.6 12 20 12 20z" fill="var(--pink-soft)" stroke="var(--pink-ink)"/></symbol>
   <symbol id="i-thermo" viewBox="0 0 24 24"><path d="M13.5 14.2V5.5a2 2 0 1 0-4 0v8.7a4 4 0 1 0 4 0z" fill="var(--pink-soft)" stroke="var(--pink-ink)"/></symbol>
 </svg>
 <script>
@@ -835,14 +846,6 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
       <button id="theme2" class="wnav" title="Тема оформления" aria-label="Тема оформления"><svg class="ic" aria-hidden="true"><use href="#i-auto"/></svg></button>
     </div>
     <div class="side-body">
-    <div class="side-h">Поиск</div>
-    <div class="search" style="margin:2px 0">
-      <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
-      <input id="q" type="search" autocomplete="off" placeholder="предмет, препод, тип, аудитория…"
-             class="ctl" style="width:100%" />
-      <div id="suggbox" class="suggbox hidden"></div>
-    </div>
-
     <div class="segrow">
       <span class="seg-lab">Вид</span>
       <div class="seg" role="group" aria-label="Вид расписания">
@@ -852,8 +855,23 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
       </div>
     </div>
 
-    <div class="side-h">Период</div>
-    <button class="side-btn" data-scope="m1">Месяц вперёд</button>
+    <div class="segrow">
+      <span class="seg-lab">Пары</span>
+      <div class="seg" id="uniseg" role="group" aria-label="Пары группы">
+        <button type="button" data-uni="1">Показать</button>
+        <button type="button" data-uni="0">Скрыть</button>
+      </div>
+    </div>
+
+    <div class="side-h">Поиск</div>
+    <div class="search" style="margin:2px 0">
+      <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+      <input id="q" type="search" autocomplete="off" placeholder="предмет, препод, тип, аудитория…"
+             class="ctl" style="width:100%" />
+      <div id="suggbox" class="suggbox hidden"></div>
+    </div>
+
+    <div class="side-h">Период поиска</div>
     <div class="side-field">
       <label>Свой период</label>
       <div class="daterange">
@@ -880,14 +898,6 @@ document.getElementById('gateForm').addEventListener('submit', async e => {
       <button id="share" class="actbtn" title="Скопировать ссылку на текущий вид с фильтрами"><svg class="ic" aria-hidden="true"><use href="#i-link"/></svg> Поделиться</button>
     </div>
 
-
-    <div class="segrow">
-      <span class="seg-lab">Пары</span>
-      <div class="seg" id="uniseg" role="group" aria-label="Пары группы">
-        <button type="button" data-uni="1">Показать</button>
-        <button type="button" data-uni="0">Скрыть</button>
-      </div>
-    </div>
 
     <div class="segrow">
       <span class="seg-lab">Меню</span>
@@ -957,7 +967,7 @@ const SHORT=["Пн","Вт","Ср","Чт","Пт","Сб","Вс"];
 const RU_MONTHS=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 const KEY="sched_state_v2";
 let DATA=null, DATE_MAP={}, MONTHS=[], SUGG=[];
-let st={view:"list",cur:0,scope:"week",from:"",to:"",term:"",fDay:"",fType:"",fTeachers:[],pop:null,theme:"auto",side:"right",monthPtr:0,uni:true};
+let st={view:"list",cur:0,scope:"m1",from:"",to:"",term:"",fDay:"",fType:"",fTeachers:[],pop:null,theme:"auto",side:"right",monthPtr:0,uni:true};
 const mq=window.matchMedia("(prefers-color-scheme: dark)");
 
 /* ==== УТИЛИТЫ =============================================================== */
@@ -1208,38 +1218,63 @@ function pairBody(ls,timeOf){
     +ls.map(l=>`<div class="sgcol${sgTint([l])}">${body(l,timeOf?timeOf(l):"")}</div>`).join("")
     +`</div></div>`;
 }
+// Метка «моё» стоит там же, где у пар кружок подгруппы: глаз уже приучен искать
+// её на этом месте. Сердце розовое — своё легко отличить от учебного одним взглядом.
+const MINE_MARK = '<svg class="ic mine-mark" aria-hidden="true"><use href="#i-heart"/></svg>';
+
 // Компактный чип для недели и месяца — те же классы, что у пар, поэтому под
 // сетку не нужно ни одного нового CSS-правила.
 function myChipHTML(r){
   const cat=MY_TYPE[r.type]||MY_TYPE["Своё"];
-  return `<div class="mline task-chip" title="${esc(r.subject)}${r.note?" · "+esc(r.note):""}">`
-    +`${myTime(r)?`<span class="mtime">${esc(myTime(r))}</span>`:""}`
+  // В сетке у пар стоит только начало занятия: колонка узкая, и целый интервал
+  // в ней рвётся. Полное время остаётся в подсказке.
+  const start=myTime(r).split("–")[0];
+  return `<div class="mline task-chip" title="${esc(r.subject)}${myTime(r)?" · "+esc(myTime(r)):""}${r.note?" · "+esc(r.note):""}">`
+    +`${start?`<span class="mtime">${esc(start)}</span>`:""}${MINE_MARK}`
     +`<span class="mabbr" style="background:${cat.color}">${abbr(r.subject)}</span></div>`;
 }
-// Полная карточка для списка и попапа дня — .lesson с полоской по типу вместо
-// подгруппы: --stripe работает одинаково в обоих случаях.
+
+// Запись собирается той же разметкой, что и занятие группы: слева колонка с
+// номером пары и временем, справа плашка аудитории. Отличать её должен маркер,
+// а не другое устройство карточки — иначе она читается как чужеродная.
 function myCardHTML(r){
   const cat=MY_TYPE[r.type]||MY_TYPE["Своё"];
-  const meta=[r.teacher,r.room?"ауд. "+r.room:"",r.note].filter(Boolean).join(" · ");
+  const meta=[];
+  if(r.teacher)meta.push(`<span><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg> <b>${hl(r.teacher)}</b></span>`);
+  const note=r.note?`<div class="meta">${hl(r.note)}</div>`:"";
+  const room=r.room?`<div class="room-side"><div class="rm"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg> ${hl(r.room)}</div><div class="rl">аудитория</div></div>`:"";
   return `<div class="lesson task" style="--stripe:${cat.color}">
     <div class="row">
       <div class="linfo">
-        <div class="l-head">${myTime(r)?`<span class="l-time">${esc(myTime(r))}</span>`:""}<span class="pill" style="background:${cat.color}">${cat.label}</span></div>
+        <div class="l-head"><span class="pill mine-pill">${MINE_MARK} моё</span>${r.type&&r.type!=="Своё"?`<span class="pill" style="background:${cat.color}">${cat.label}</span>`:""}</div>
         <div class="subj">${hl(r.subject)}</div>
-        ${meta?`<div class="meta">${hl(meta)}</div>`:""}
+        ${meta.length?`<div class="meta">${meta.join("")}</div>`:""}
+        ${note}
       </div>
+      ${room}
     </div>
   </div>`;
+}
+
+// Строка записи в списке — с той же левой колонкой, что у пары: номер и время
+// стоят на одном месте во всех строках дня.
+function myRowHTML(r){
+  // Номер пары — понятие из расписания группы: им удобно задать время в утилите,
+  // но своё дело парой не является, и подписывать его так значит путать. В
+  // колонке остаётся только время, на том же месте, что и у занятий.
+  const t=myTime(r);
+  return `<div class="pair"><div class="pair-time"><span class="t">${t}</span></div>
+    <div class="stack">${myCardHTML(r)}</div></div>`;
 }
 function dayHTML(wi,w,di,d){
   if(st.fDay&&d.day!==st.fDay)return"";
   const isToday=sameDay(d._dt,new Date());
   const hasSelf=d.pairs.some(p=>p.lessons.some(isSelf));
   const dayMine=myForRu(d.date);
-  const myRows=dayMine.map(myCardHTML).join("");
+  const myRows=dayMine.map(myRowHTML).join("");
   const head=`<div class="day-head"><span class="day-name">${d.day}</span>
     <span class="day-date">${d.date}</span>${isToday?'<span class="today-pill">сегодня</span>':""}</div>`;
-  if(hasSelf&&!filtersOn())
+  if(st.uni&&hasSelf&&!filtersOn())
     return `<section class="day${isToday?" today":""}">${head}<div class="selfstudy"><svg class="ic" aria-hidden="true"><use href="#i-leaf"/></svg> День самостоятельной работы</div>${myRows}</section>`;
   let rows="",any=false;
   d.pairs.forEach((p,pi)=>{
@@ -1298,8 +1333,9 @@ function renderWeek(){
   // Задачи не привязаны к номеру пары, поэтому им — отдельная строка снизу,
   // а не собственная сетка часов: те же ячейки, тот же клик, что открывает день.
   html+=`<tr><td class="tm"><b>Задачи</b></td>`;
-  cols.forEach(di=>{const d=w.days[di];const chips=myForRu(d.date).map(myChipHTML).join("");
-    html+=`<td class="c" data-day="${di}" data-week="${st.cur}">${chips}</td>`;});
+  cols.forEach(di=>{const d=w.days[di];const mine=myForRu(d.date);
+    const chips=mine.map(myChipHTML).join("");
+    html+=`<td class="c${mine.length?" mine-tint has-mine":""}" data-day="${di}" data-week="${st.cur}">${chips}</td>`;});
   html+="</tr>";
   return '<div class="hscroll">'+html+"</table></div>";
 }
@@ -1309,11 +1345,15 @@ function renderWeek(){
    и в воскресенье, поэтому ничего нельзя прибивать к четвергу или к Пн-Сб. */
 function dayUsage(){
   const real=new Set(), any=new Set();
-  DATA.weeks.forEach(w=>w.days.forEach((d,di)=>d.pairs.forEach(p=>
-    p.lessons.forEach(l=>{
+  DATA.weeks.forEach(w=>w.days.forEach((d,di)=>{
+    d.pairs.forEach(p=>p.lessons.forEach(l=>{
       any.add(di);
       if(!isSelf(l)&&l.subject)real.add(di);
-    }))));
+    }));
+    // Своя запись делает день таким же занятым, как пара: иначе четверг с
+    // пересдачей остаётся сжатой колонкой, и запись в ней не помещается.
+    if(myForRu(d.date).length){ any.add(di); real.add(di); }
+  }));
   return{real,any};
 }
 /* Дни без обычных пар: самостоятельная работа или вовсе пусто.
@@ -1351,8 +1391,9 @@ function renderMonth(){
     if(!ref){
       // День вне семестра (до 1 сентября / после сессии) — пар там нет,
       // но своя задача на такую дату всё равно должна быть видна.
-      const outMine=myForRu(dt.toLocaleDateString("ru-RU")).map(myChipHTML).join("");
-      html+=`<div class="mcell${t?" today":""}${q}"><div class="mn">${day}</div>${outMine}</div>`;continue;}
+      const outRecords=myForRu(dt.toLocaleDateString("ru-RU"));
+      const outMine=outRecords.map(myChipHTML).join("");
+      html+=`<div class="mcell${t?" today":""}${q}${outRecords.length?" mine-tint has-mine":""}"><div class="mn">${day}</div>${outMine}</div>`;continue;}
     const d=DATA.weeks[ref.wi].days[ref.di];
     const self=d.pairs.some(p=>p.lessons.some(isSelf));
     const items=[];
@@ -1368,7 +1409,11 @@ function renderMonth(){
       +dayMine.map(myChipHTML).join("");
     const dayLessons=d.pairs.flatMap(p=>p.lessons).filter(match);
     const dim=filtersOn()&&!dayLessons.filter(l=>!isSelf(l)).length&&!dayMine.length?" dim":"";
-    html+=`<div class="mcell${t?" today":""}${q}${dim||sgTint(dayLessons)}" data-day="${ref.di}" data-week="${ref.wi}"><div class="mn">${day}</div>${lines}</div>`;
+    // Пары скрыты рубильником или фильтром, а своё есть — ячейка не должна
+    // оставаться белой: она подкрашивается своим цветом.
+    const tint=dim||sgTint(dayLessons)||(dayMine.length?" mine-tint":"");
+    const mark=dayMine.length?" has-mine":"";
+    html+=`<div class="mcell${t?" today":""}${q}${tint}${mark}" data-day="${ref.di}" data-week="${ref.wi}"><div class="mn">${day}</div>${lines}</div>`;
   }
   return html+"</div></div>";
 }
@@ -1401,6 +1446,9 @@ function fillPicker(){
 /* Инфо-блок из шапки исходной таблицы: режем сплошной текст на отдельные факты.
    Адрес выкидываем — студенты и так знают, где учатся. */
 function renderFooter(){
+  // Пары скрыты — скрыты и пояснения к ним: чётность недель и праздники это
+  // расписание группы, к своим записям они отношения не имеют.
+  if(!st.uni){ $("footer").innerHTML=""; return; }
   const raw=(DATA.notes||[]).filter(Boolean).join(" ").replace(/\s+/g," ").trim();
   const items=raw
     .split(/Прим\.\s*\d+:\s*/)
@@ -1483,7 +1531,6 @@ function render(){
 /* ==== СИНХРОНИЗАЦИЯ ИНТЕРФЕЙСА ============================================== */
 function syncUI(){
   document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===st.view));
-  document.querySelectorAll("[data-scope]").forEach(b=>b.classList.toggle("active",b.dataset.scope===st.scope));
 }
 /* Состояние в адресе. Список полей описан один раз: и запись, и чтение
    ходят по этой таблице, поэтому они не могут разъехаться. */
@@ -1590,7 +1637,6 @@ function bindViewButtons(){
     if(b.dataset.view==="month"&&st.view!=="month")st.monthPtr=monthOfWeek(st.cur);
     st.view=b.dataset.view;save();show();closeNav();});
   // scope
-  document.querySelectorAll("[data-scope]").forEach(b=>b.onclick=()=>{st.scope=b.dataset.scope;st.view="list";save();show();closeNav();});
   $("from").onchange=e=>{st.from=e.target.value;st.scope="custom";st.view="list";save();show();};
   $("to").onchange=e=>{st.to=e.target.value;st.scope="custom";st.view="list";save();show();};
 }
