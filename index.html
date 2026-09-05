@@ -1225,6 +1225,9 @@ function expandRepeat(rule,fromRu,toRu){
   if(!start||!stop||!from||!to)return out;
   const skip=new Set(rule.skip||[]);
   const moves=rule.move||{};
+  // done в правиле бьёт по дате слота, а не по всему правилу — иначе одна
+  // отметка красила бы прошлые и будущие повторения разом.
+  const done=new Set(rule.done||[]);
   const first=new Date(Math.max(start.getTime(),from.getTime()));
   const last=new Date(Math.min(stop.getTime(),to.getTime()));
   for(const d=new Date(first);d<=last;d.setDate(d.getDate()+1)){
@@ -1241,7 +1244,7 @@ function expandRepeat(rule,fromRu,toRu){
     }
     const ru=d.toLocaleDateString("ru-RU");
     if(skip.has(ru))continue;
-    out.push({...rule,date:moves[ru]||ru,repeat:null,_fromRule:rule.id});
+    out.push({...rule,date:moves[ru]||ru,repeat:null,_fromRule:rule.id,_done:done.has(ru)});
   }
   // Перенос мог увести повторение за пределы окна показа — тогда его здесь нет,
   // и это правильно: оно появится в том отрезке, куда его перенесли.
@@ -1250,7 +1253,7 @@ function expandRepeat(rule,fromRu,toRu){
     if(!at||at<from||at>to)return;
     if(out.some(r=>r.date===dst))return;
     const was=ruToDate(src);
-    if(was&&was>=start&&was<=stop)out.push({...rule,date:dst,repeat:null,_fromRule:rule.id});
+    if(was&&was>=start&&was<=stop)out.push({...rule,date:dst,repeat:null,_fromRule:rule.id,_done:done.has(src)});
   });
   return out;
 }
@@ -1379,10 +1382,14 @@ function pairBody(ls,timeOf){
 // её на этом месте. Сердце розовое — своё легко отличить от учебного одним взглядом.
 const MINE_MARK = '<svg class="ic mine-mark" aria-hidden="true"><use href="#i-heart"/></svg>';
 
+// done — список дат в поле done, единый для разового дела и повторения.
+// У развёрнутого повторения (_fromRule) его уже посчитал expandRepeat: там
+// нужна дата слота, а не дата, которая после переноса лежит в .date.
+// У разового своя дата и есть его единственный слот.
+function isDone(r){ return r._fromRule ? !!r._done : (r.done||[]).includes(r.date); }
+
 // Компактный чип для недели и месяца — те же классы, что у пар, поэтому под
 // сетку не нужно ни одного нового CSS-правила.
-// Тег done живёт в tags — второго поля под тот же смысл заводить незачем.
-function isDone(r){ return (r.tags||[]).includes("done"); }
 
 function myChipHTML(r,clash){
   const cat=MY_TYPE[r.type]||MY_TYPE["Своё"];

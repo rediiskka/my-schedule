@@ -71,9 +71,6 @@ PLACED = ("me", "auto")
 # одинаковых записей: перенести танцы на час позже — одна правка, а не пятьдесят.
 WEEKDAYS = {"пн": 0, "вт": 1, "ср": 2, "чт": 3, "пт": 4, "сб": 5, "вс": 6}
 
-# Отдельного поля "сделано" не заводим — сайт уже умеет показывать и
-# фильтровать теги, второй механики для того же смысла не нужно.
-DONE_TAG = "done"
 
 
 # ---- пароль и ключ ----------------------------------------------------------
@@ -254,6 +251,14 @@ def parse_moves(pairs):
     return out
 
 
+def parse_done_on(args):
+    """Даты повторений, отмеченных сделанными — тот же формат, что у переноса."""
+    for d in args.done_on or []:
+        if not DATE_RE.match(d):
+            raise SystemExit("--done-on в формате ДД.ММ.ГГГГ, как перенос")
+    return list(args.done_on or [])
+
+
 def guess_horizon(args, prev):
     """Горизонт из того, что задано: время -> день -> период -> без срока."""
     if args.horizon:
@@ -269,15 +274,26 @@ def guess_horizon(args, prev):
     return "season"
 
 
-def resolve_tags(args, prev):
-    """Теги: --tag переопределяет список целиком, --done лишь ставит или снимает
-    метку done в нём же — второго поля под тот же смысл не нужно."""
-    tags = list(args.tag) if args.tag else list(prev.get("tags") or [])
-    if args.done == "yes" and DONE_TAG not in tags:
-        tags.append(DONE_TAG)
-    elif args.done == "no" and DONE_TAG in tags:
-        tags.remove(DONE_TAG)
-    return tags
+def resolve_done(args, record):
+    """done — единый механизм завершения что для разового дела, что для
+    повторяющегося: список дат. У разового в нём не больше одной — своей же
+    даты; у повторяющегося — по одной на каждое отмеченное --done-on
+    повторение. Тег для этого не годится: одна опечатка или правка тегов
+    целиком тихо стирает отметку, а поле проверяется утилитой."""
+    done = list(record.get("done") or [])
+    if record["repeat"]:
+        if args.done is not None:
+            raise SystemExit("у повторяющегося дела done ставится на дату через --done-on, а не --done")
+        return sorted(set(done + parse_done_on(args)))
+    if args.done_on:
+        raise SystemExit("--done-on только для повторяющегося дела — у разового своя дата: --done yes|no")
+    if args.done == "yes":
+        if not record["date"]:
+            raise SystemExit("--done нужна дата — у дела без date (week/month/season) отмечать пока нечем")
+        return [record["date"]]
+    if args.done == "no":
+        return []
+    return done
 
 
 def build(args, prev=None):
@@ -298,11 +314,15 @@ def build(args, prev=None):
         "teacher": args.teacher if args.teacher is not None else prev.get("teacher", ""),
         "room": args.room if args.room is not None else prev.get("room", ""),
         "note": args.note if args.note is not None else prev.get("note", ""),
-        "tags": resolve_tags(args, prev),
+        # Пустая строка — это --tag "": явно стереть все метки, а не оставить
+        # прежние. Без этого стереть их было бы нечем.
+        "tags": [t for t in args.tag if t] if args.tag else prev.get("tags", []),
         "repeat": parse_repeat(args) or prev.get("repeat"),
         "skip": sorted(set((prev.get("skip") or []) + list(args.skip or []))),
         "move": {**(prev.get("move") or {}), **parse_moves(args.move)},
+        "done": list(prev.get("done") or []),
     }
+    record["done"] = resolve_done(args, record)
     # Обязательное зависит только от горизонта — в этом весь смысл модели.
     if not record["subject"]:
         raise SystemExit("обязателен --subject")
@@ -357,6 +377,10 @@ def show(records):
                 when += f", кроме {', '.join(record['skip'])}"
             if record.get("move"):
                 when += ", перенос " + ", ".join(f"{a}→{b}" for a, b in record["move"].items())
+            if record.get("done"):
+                when += f", сделано {', '.join(record['done'])}"
+        elif record.get("done"):
+            when += "  ✓ сделано"
         auto = " ~" if record.get("placed") == "auto" else "  "
         print(f"{record.get('date') or '..........'}{auto}{when}  {record['subject']}"
               f"  [{record.get('type', '')}]{who}{where}  ({record['id'][:8]})")
@@ -412,6 +436,8 @@ def main():
         p.add_argument("--skip", action="append", help="отменить одно повторение: ДД.ММ.ГГГГ")
         p.add_argument("--move", action="append",
                        help="перенести одно повторение: ДД.ММ.ГГГГ=ДД.ММ.ГГГГ")
+        p.add_argument("--done-on", action="append",
+                       help="отметить сделанным одно повторение: ДД.ММ.ГГГГ")
 
     for name, help_text in (("list", "показать записи"), ("add", "добавить"),
                             ("edit", "изменить"), ("rm", "удалить"),
