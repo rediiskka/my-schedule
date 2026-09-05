@@ -71,6 +71,10 @@ PLACED = ("me", "auto")
 # одинаковых записей: перенести танцы на час позже — одна правка, а не пятьдесят.
 WEEKDAYS = {"пн": 0, "вт": 1, "ср": 2, "чт": 3, "пт": 4, "сб": 5, "вс": 6}
 
+# Отдельного поля "сделано" не заводим — сайт уже умеет показывать и
+# фильтровать теги, второй механики для того же смысла не нужно.
+DONE_TAG = "done"
+
 
 # ---- пароль и ключ ----------------------------------------------------------
 
@@ -265,6 +269,17 @@ def guess_horizon(args, prev):
     return "season"
 
 
+def resolve_tags(args, prev):
+    """Теги: --tag переопределяет список целиком, --done лишь ставит или снимает
+    метку done в нём же — второго поля под тот же смысл не нужно."""
+    tags = list(args.tag) if args.tag else list(prev.get("tags") or [])
+    if args.done == "yes" and DONE_TAG not in tags:
+        tags.append(DONE_TAG)
+    elif args.done == "no" and DONE_TAG in tags:
+        tags.remove(DONE_TAG)
+    return tags
+
+
 def build(args, prev=None):
     """Дело: одно и то же для цели, задачи и пункта расписания — см. docs/model.md."""
     prev = prev or {}
@@ -283,7 +298,7 @@ def build(args, prev=None):
         "teacher": args.teacher if args.teacher is not None else prev.get("teacher", ""),
         "room": args.room if args.room is not None else prev.get("room", ""),
         "note": args.note if args.note is not None else prev.get("note", ""),
-        "tags": list(args.tag) if args.tag else prev.get("tags", []),
+        "tags": resolve_tags(args, prev),
         "repeat": parse_repeat(args) or prev.get("repeat"),
         "skip": sorted(set((prev.get("skip") or []) + list(args.skip or []))),
         "move": {**(prev.get("move") or {}), **parse_moves(args.move)},
@@ -383,6 +398,7 @@ def main():
         p.add_argument("--note")
         p.add_argument("--tag", action="append",
                        help="метка по смыслу: спорт, здоровье, подработка. Можно несколько")
+        p.add_argument("--done", choices=("yes", "no"), help="сделано — ставит или снимает тег done")
         p.add_argument("--horizon", choices=HORIZONS,
                        help="точность: time, day, week, month, season. Обычно понятен сам")
         p.add_argument("--period", help="границы для week и month: ДД.ММ.ГГГГ-ДД.ММ.ГГГГ")

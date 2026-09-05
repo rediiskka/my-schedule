@@ -518,6 +518,10 @@
   .pill.auto-pill{background:transparent;color:var(--muted);border:1px dashed var(--line)}
   .lesson.task.auto{border-style:dashed}
   .lesson.task.clash{outline:2px solid var(--now);outline-offset:-2px}
+  .pill.done-pill{background:var(--mint-soft);color:var(--mint-ink)}
+  .lesson.task.done{opacity:.6}
+  .lesson.task.done .subj{text-decoration:line-through}
+  .task-chip.done{opacity:.55}
   .pill.mine-pill{display:inline-flex;align-items:center;gap:4px;
     background:var(--pink-soft);color:var(--pink-ink)}
 
@@ -1377,12 +1381,15 @@ const MINE_MARK = '<svg class="ic mine-mark" aria-hidden="true"><use href="#i-he
 
 // Компактный чип для недели и месяца — те же классы, что у пар, поэтому под
 // сетку не нужно ни одного нового CSS-правила.
+// Тег done живёт в tags — второго поля под тот же смысл заводить незачем.
+function isDone(r){ return (r.tags||[]).includes("done"); }
+
 function myChipHTML(r,clash){
   const cat=MY_TYPE[r.type]||MY_TYPE["Своё"];
   // В сетке у пар стоит только начало занятия: колонка узкая, и целый интервал
   // в ней рвётся. Полное время остаётся в подсказке.
   const start=myTime(r).split("–")[0];
-  return `<div class="mline task-chip${clash?" clash":""}" title="${esc(r.subject)}${myTime(r)?" · "+esc(myTime(r)):""}${clash?" · наложение":""}${r.note?" · "+esc(r.note):""}">`
+  return `<div class="mline task-chip${clash?" clash":""}${isDone(r)?" done":""}" title="${esc(r.subject)}${myTime(r)?" · "+esc(myTime(r)):""}${clash?" · наложение":""}${r.note?" · "+esc(r.note):""}">`
     +`${start?`<span class="mtime">${esc(start)}</span>`:""}${MINE_MARK}`
     +`<span class="mabbr" style="background:${cat.color}">${abbr(r.subject)}</span></div>`;
 }
@@ -1396,10 +1403,10 @@ function myCardHTML(r,clash){
   if(r.teacher)meta.push(`<span><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg> <b>${hl(r.teacher)}</b></span>`);
   const note=r.note?`<div class="meta">${hl(r.note)}</div>`:"";
   const room=r.room?`<div class="room-side"><div class="rm"><svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg> ${hl(r.room)}</div><div class="rl">аудитория</div></div>`:"";
-  return `<div class="lesson task${clash?" clash":""}${r.placed==="auto"?" auto":""}" style="--stripe:${cat.color}">
+  return `<div class="lesson task${clash?" clash":""}${r.placed==="auto"?" auto":""}${isDone(r)?" done":""}" style="--stripe:${cat.color}">
     <div class="row">
       <div class="linfo">
-        <div class="l-head"><span class="pill mine-pill">${MINE_MARK} моё</span>${r.type&&r.type!=="Своё"?`<span class="pill" style="background:${cat.color}">${cat.label}</span>`:""}${r.placed==="auto"?`<span class="pill auto-pill" title="время предложено, не подтверждено">поставлено само</span>`:""}${clash?`<span class="pill clash-pill">наложение</span>`:""}</div>
+        <div class="l-head"><span class="pill mine-pill">${MINE_MARK} моё</span>${isDone(r)?`<span class="pill done-pill">сделано</span>`:""}${r.type&&r.type!=="Своё"?`<span class="pill" style="background:${cat.color}">${cat.label}</span>`:""}${r.placed==="auto"?`<span class="pill auto-pill" title="время предложено, не подтверждено">поставлено само</span>`:""}${clash?`<span class="pill clash-pill">наложение</span>`:""}</div>
         <div class="subj">${hl(r.subject)}</div>
         ${meta.length?`<div class="meta">${meta.join("")}</div>`:""}
         ${(r.tags||[]).length?`<div class="tags">${r.tags.map(t=>`<span class="tag">#${esc(t)}</span>`).join("")}</div>`:""}
